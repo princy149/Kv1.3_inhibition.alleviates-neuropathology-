@@ -36,21 +36,6 @@ options(stringsAsFactors = FALSE)
 
 ```{r Define Gene Sets for Pro-Resilience}
 # Mitochondrial, Synaptic, and Ribosomal Genes
-mitochondrial.Pro.resilience <- c("Mcu", "Actn4", "Pdha1", "Gad1", "Atp1a1", "L2hgdh", "Slc25a11", "Pdhb",
-                                   "Cox4i1", "Tmem63b", "Tmem65", "Diras1", "Idh3b", "Atad1", "Mtx2", "Gk",
-                                   "Timm8a", "Atp2b2", "Ndufs8", "Coa1", "Hcn1", "Idh3a", "Ndufb7", "Mpc2",
-                                   "Gcsh", "Bdh1", "Timm44", "Cacng2", "Lpcat4", "Agpat5", "Elmod1", "Cpt1a",
-                                   "Adam11", "Prrt3", "Nfs1", "Cadps2", "Slc25a3", "Fam162a", "Cadps", "Iscu",
-                                   "Tmem126b", "Ndufv3", "Adcy1", "Nipsnap1", "Dbt", "Ahcyl2")
-
-synaptic.Pro.resilience <- c("Tmod1", "Lancl2", "Sep11", "Hpca", "Ctnna2", "Gsk3a", "Pak1", "Numb",
-                             "C12orf57", "Palm2", "Actn1", "Rab35", "Ica1", "Gng3", "Calb1", "Syngap1",
-                             "Rimbp2", "Ppp2r2c", "Gga1", "Dnajc19", "Snap25", "Sh3gl1", "Ctnnb1")
-
-ribosomes.Pro.resilience <- c("Lyrm7", "Rp113", "Rpl9", "Rps9", "Rp113a", "Ndufaf1", "Rps25", "Rpl5",
-                              "Rps15", "Smyd1", "Rplp0", "Rpl30", "Rpl128", "Lars2", "Skp2b", "Lmperg",
-                              "Acad9", "Mmp32", "D2hgdh", "Rpl10")
-
 # Store in a list
 gene_lists <- list(
   Mitochondrial = mitochondrial.Pro.resilience,
