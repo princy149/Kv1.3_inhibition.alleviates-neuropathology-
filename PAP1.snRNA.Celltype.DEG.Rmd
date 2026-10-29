@@ -1,0 +1,1384 @@
+---
+title: "PAP1.Celltype.DEG"
+author: "Dr UPASNA"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r LOAD DATA FOR PAP1 vs. Control }
+#
+library(readr)
+resDF_Astrocytes_Pap1_vs_Control <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.Astrocytes/resDF.Astrocytes.Pap1.vs.Control.csv")
+table(resDF_Astrocytes_Pap1_vs_Control$diffexpressed)
+
+library(readr)
+resDF_Microglia_Pap1_control_13feb <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.Microglia/resDF.Microglia.Pap1.control.13feb.csv")
+
+table(resDF_Microglia_Pap1_control_13feb$diffexpressed)
+
+resDF_Oligodendrocyte_Pap1_vs_Control <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.Oligodendrocytes/resDF.Oligodendrocyte.Pap1.vs.Control.csv")
+table(resDF_Oligodendrocyte_Pap1_vs_Control$diffexpressed)
+
+
+resDF_GABA_ergic_Neuron_Pap1_vs_control <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.Endothelial/resDF.GABA.ergic.Neuron.Pap1.vs.control.csv")
+
+table(resDF_GABA_ergic_Neuron_Pap1_vs_control$diffexpressed)
+
+resDF_Glutamatergic_Neuron_pap1_vs_control <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.GABAergic.Neurons/resDF.Glutamatergic.Neuron.pap1.vs.control.csv")
+
+table(resDF_Glutamatergic_Neuron_pap1_vs_control$diffexpressed)
+
+
+
+resDF_Endothelial_Cell_Pap1_vs_control <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.Endothelial/resDF.Endothelial.Cell.Pap1.vs.control.csv")
+
+table(resDF_Endothelial_Cell_Pap1_vs_control$diffexpressed)
+
+```
+
+
+
+```{r Microglia_Pap1_control}
+library(dplyr)
+library(RColorBrewer)
+library(tidyverse)
+library(ggplot2)
+library(EnhancedVolcano)
+library(enrichplot)
+library(dplyr)
+library(gridExtra)
+library(glmGamPoi)
+
+## Microglia_pap1_vs_control
+resDF <- resDF_Microglia_Pap1_control_13feb
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+Microglia_Pap1_control <- resDF
+
+table(Microglia_Pap1_control$Expression.Padjust)
+
+write.csv(Microglia_Pap1_control, file = 'Microglia_Pap1_control.csv')
+
+# Microglia_Pap1_control  Volcano
+resDF <- Microglia_Pap1_control 
+resDF$name <- resDF$...1
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(10)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(10)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "Microglia_Pap1_control",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("Microglia_Pap1_control.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+
+
+### Microglia GO plot (UP, DOWN) PAP1 vs. Control
+library(clusterProfiler)
+library(enrichR)
+library(org.Mm.eg.db)
+#### Subset for UP and DOWN
+# Microglia_Pap1_control 
+### Microglia GO plot (UP, DOWN) PAP1 vs. Control
+
+library(clusterProfiler)
+library(enrichR)
+library(org.Mm.eg.db)
+
+#### Subset for UP and DOWN
+# Microglia_Pap1_control 
+Microglia.UP <- subset(Microglia_Pap1_control, Expression.Padjust == "UP")
+Microglia.UP <- Microglia.UP$...1
+
+Microglia.DOWN <- subset(Microglia_Pap1_control, Expression.Padjust == "DOWN")
+Microglia.DOWN <- Microglia.DOWN$...1
+
+## GO Enrichment for Microglia UP (PAP1 vs. CONTROL)
+go_up <- enrichGO(
+  gene = Microglia.UP,
+  OrgDb = org.Mm.eg.db,
+  keyType = "SYMBOL",       # <- Correct keyType
+  ont = "ALL",              # Ontologies: BP, MF, CC
+  pAdjustMethod = "BH",
+  qvalueCutoff = 1,         # No filtering yet
+  readable = FALSE
+)
+
+go_down <- enrichGO(
+  gene = Microglia.DOWN,
+  OrgDb = org.Mm.eg.db,
+  keyType = "SYMBOL",
+  ont = "ALL",
+  pAdjustMethod = "BH",
+  qvalueCutoff = 1,
+  readable = FALSE
+)
+
+# Extract and label results — use -log10(p.adjust) instead of NES
+Microglia.GO_UP.result <- go_up@result
+Microglia.GO_UP.result$logFDR <- -log10(Microglia.GO_UP.result$p.adjust)
+Microglia.GO_UP.result$Expression <- "UP"
+Microglia.GO_UP.result$Type <- "PAP1.vs.Control"
+
+Microglia.GO_Down.result <- go_down@result
+Microglia.GO_Down.result$logFDR <- -log10(Microglia.GO_Down.result$p.adjust)
+Microglia.GO_Down.result$Expression <- "DOWN"
+Microglia.GO_Down.result$Type <- "PAP1.vs.Control"
+
+saveRDS(Microglia.GO_UP.result, file = 'Microglia.GO_UP.result.rds')
+write.csv(Microglia.GO_UP.result, file = 'Microglia.GO_UP.result.csv')
+saveRDS(Microglia.GO_Down.result, file = 'Microglia.GO_Down.result.rds')
+write.csv(Microglia.GO_Down.result, file = 'Microglia.GO_Down.result.csv')
+
+## GO plot
+library(ggplot2)
+library(dplyr)
+library(stringr)
+
+# Combine and process
+go_combined <- rbind(
+    Microglia.GO_UP.result %>% mutate(Regulation = "Upregulated"),
+    Microglia.GO_Down.result %>% mutate(Regulation = "Downregulated")
+)
+
+# Z-score & first 3 unique gene symbols
+go_combined <- go_combined %>%
+    mutate(
+        Zscore = ifelse(Regulation == "Downregulated", -logFDR, logFDR),
+        GeneSymbols = sapply(strsplit(geneID, "/"), function(g) {
+            unique_genes <- unique(g)
+            paste(head(unique_genes, 3), collapse = ", ")
+        })
+    )
+
+# Top 5 from each
+top_go_plot_data <- go_combined %>%
+    group_by(Regulation) %>%
+    slice_max(order_by = abs(Zscore), n = 15) %>%
+    ungroup() %>%
+    arrange(desc(Zscore))  # UP on top
+
+# Order factor
+top_go_plot_data$Description <- factor(
+    top_go_plot_data$Description,
+    levels = rev(top_go_plot_data$Description)
+)
+
+top_go_plot_data$Regulation <- factor(
+    top_go_plot_data$Regulation,
+    levels = c("Upregulated", "Downregulated")
+)
+
+# Plot
+plot_go <- ggplot(top_go_plot_data, aes(x = Zscore, y = Description, fill = Regulation)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = GeneSymbols),
+              hjust = ifelse(top_go_plot_data$Zscore > 0, -0.1, 1.1),
+              size = 2, fontface = "italic") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.8) +
+    scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue")) +
+    theme_minimal(base_size = 14) +
+    theme(
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y = element_text(size = 12, face = "bold"),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.title = element_text(face = "bold"),
+        legend.position = "none"
+    ) +
+    labs(
+        title = "GO: Microglia PAP1.vs.Control",
+        x = "Z-score",
+        y = "GO Term",
+        fill = "Regulation"
+    ) +
+    xlim(min(top_go_plot_data$Zscore) - 2, max(top_go_plot_data$Zscore) + 2)
+
+plot_go
+
+# Save as PDF
+ggsave("GO_Transcriptomic_Barplot.pdf", plot = plot_go, width = 10, height = 6)
+write.csv(top_go_plot_data, file = 'Top.GO.Microglia.PAP1.vs.Control.csv')
+go_combined
+write.csv(go_combined, file = 'GO_combined.Microglia.PAP1.vs.Control.csv')
+```
+
+
+
+```{r Astrocyte_pap1_vs_control}
+## Astrocyte_pap1_vs_control
+
+resDF <- resDF_Astrocytes_Pap1_vs_Control
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+Astrocytes_Pap1_vs_Control <- resDF
+
+table(Astrocytes_Pap1_vs_Control$Expression.Padjust)
+
+write.csv(Astrocytes_Pap1_vs_Control, file = 'Astrocytes_Pap1_vs_Control.csv')
+
+# Astrocytes_Pap1_vs_Control Volcano
+
+resDF <- Astrocytes_Pap1_vs_Control 
+
+resDF$name <- resDF$...1
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(12)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(12)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "Astrocytes_Pap1_control",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("Astrocytes_Pap1_control.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+
+### GO plot for Astrocytes_Pap1_vs_Control
+
+### Load Required Libraries
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+
+### Load and prepare input data
+resDF <- Astrocytes_Pap1_vs_Control
+resDF$name <- resDF$...1  # Assign gene name column
+
+### Subset UP and DOWN regulated genes
+Astro.UP <- subset(resDF, Expression.Padjust == "UP")$name
+Astro.DOWN <- subset(resDF, Expression.Padjust == "DOWN")$name
+
+### Run GO Enrichment (BP, MF, CC)
+go_up <- enrichGO(
+  gene = Astro.UP,
+  OrgDb = org.Mm.eg.db,
+  keyType = "SYMBOL",
+  ont = "ALL",
+  pAdjustMethod = "BH",
+  qvalueCutoff = 1,
+  readable = FALSE
+)
+
+go_down <- enrichGO(
+  gene = Astro.DOWN,
+  OrgDb = org.Mm.eg.db,
+  keyType = "SYMBOL",
+  ont = "ALL",
+  pAdjustMethod = "BH",
+  qvalueCutoff = 1,
+  readable = FALSE
+)
+
+### Extract results and add labels
+Astro.GO_UP.result <- go_up@result %>%
+  mutate(
+    logFDR = -log10(p.adjust),
+    Expression = "UP",
+    Type = "PAP1.vs.Control"
+  )
+
+Astro.GO_Down.result <- go_down@result %>%
+  mutate(
+    logFDR = -log10(p.adjust),
+    Expression = "DOWN",
+    Type = "PAP1.vs.Control"
+  )
+
+### Save results
+saveRDS(Astro.GO_UP.result, 'Astro.GO_UP.result.rds')
+write.csv(Astro.GO_UP.result, 'Astro.GO_UP.result.csv')
+saveRDS(Astro.GO_Down.result, 'Astro.GO_Down.result.rds')
+write.csv(Astro.GO_Down.result, 'Astro.GO_Down.result.csv')
+
+### Combine and prepare for plotting
+go_combined <- bind_rows(
+  Astro.GO_UP.result %>% mutate(Regulation = "Upregulated"),
+  Astro.GO_Down.result %>% mutate(Regulation = "Downregulated")
+)
+
+go_combined <- go_combined %>%
+  mutate(
+    Zscore = ifelse(Regulation == "Downregulated", -logFDR, logFDR),
+    GeneSymbols = sapply(strsplit(geneID, "/"), function(g) {
+      unique_genes <- unique(g)
+      paste(head(unique_genes, 3), collapse = ", ")
+    })
+  )
+
+### Top 5 from each regulation
+top_go_plot_data <- go_combined %>%
+  group_by(Regulation) %>%
+  slice_max(order_by = abs(Zscore), n = 8) %>%
+  ungroup() %>%
+  arrange(desc(Zscore))
+
+top_go_plot_data$Description <- factor(
+  top_go_plot_data$Description,
+  levels = rev(top_go_plot_data$Description)
+)
+
+top_go_plot_data$Regulation <- factor(
+  top_go_plot_data$Regulation,
+  levels = c("Upregulated", "Downregulated")
+)
+
+### Plot
+plot_go <- ggplot(top_go_plot_data, aes(x = Zscore, y = Description, fill = Regulation)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = GeneSymbols),
+            hjust = ifelse(top_go_plot_data$Zscore > 0, -0.1, 1.1),
+            size = 2, fontface = "italic") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.8) +
+  scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue")) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, size = 1),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_text(size = 12, face = "bold"),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.title = element_text(face = "bold"),
+    legend.position = "none"
+  ) +
+  labs(
+    title = "GO: Astrocytes PAP1.vs.Control",
+    x = "Z-score",
+    y = "GO Term",
+    fill = "Regulation"
+  ) +
+  xlim(min(top_go_plot_data$Zscore) - 2, max(top_go_plot_data$Zscore) + 2)
+
+
+plot_go
+
+### Save Plot & Data
+ggsave("GO_Astrocytes_Barplot.pdf", plot = plot_go, width = 10, height = 6)
+write.csv(top_go_plot_data, 'Top.GO.Astrocytes.PAP1.vs.Control.csv')
+write.csv(go_combined, 'GO_combined.Astrocytes.PAP1.vs.Control.csv')
+
+
+
+```
+
+
+```{r Oligodendrocyte_pap1_vs_control}
+## Oligodendrocyte_pap1_vs_control
+
+resDF <- resDF_Oligodendrocyte_Pap1_vs_Control 
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+Oligodendrocyte_Pap1_vs_Control  <- resDF
+
+table(Oligodendrocyte_Pap1_vs_Control$Expression.Padjust)
+
+write.csv(Oligodendrocyte_Pap1_vs_Control, file = 'Oligodendrocyte_Pap1_vs_Control.csv')
+
+## Oligodendrocyte_Pap1_vs_Control Volcano
+
+resDF <- Oligodendrocyte_Pap1_vs_Control
+
+resDF$name <- resDF$name
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(12)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(12)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "Oligodendrocyte_Pap1_control",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("Oligodendrocyte_Pap1_control.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+dev.off( )
+### Endothelial_Cell_pap1_vs_control
+
+resDF <- resDF_Endothelial_Cell_Pap1_vs_control
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+Endothelial_Cell_Pap1_vs_control  <- resDF
+
+table(Endothelial_Cell_Pap1_vs_control$Expression.Padjust)
+
+write.csv(Endothelial_Cell_Pap1_vs_control, file = 'Endothelial_Cell_Pap1_vs_control.csv')
+
+
+## Endothelial_Cell_pap1_vs_control Volcano
+
+resDF <- Endothelial_Cell_Pap1_vs_control
+
+resDF$name <- resDF$name
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(12)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(12)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "Endothelial_Cell_Pap1_control",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("Endothelial_Cell_Pap1_control.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+
+
+### GABA_ergic_Neuron_pap1_vs_control
+
+resDF <- resDF_GABA_ergic_Neuron_Pap1_vs_control
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+GABA_ergic_Neuron_Pap1_vs_control  <- resDF
+
+table(GABA_ergic_Neuron_Pap1_vs_control$Expression.Padjust)
+
+write.csv(GABA_ergic_Neuron_Pap1_vs_control, file = 'GABA_ergic_Neuron_Pap1_vs_control.csv')
+
+## GABA_ergic_Neuron_Pap1_vs_control Volcano
+
+resDF <- GABA_ergic_Neuron_Pap1_vs_control
+
+resDF$name <- resDF$...1
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(12)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(12)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "GABA_ergic_Neuron_Pap1_control",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("GABA_ergic_Neuron_Pap1_control.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+#dev.off()
+
+## Glutamatergic_Neuron_pap1_vs_control
+
+resDF <- resDF_Glutamatergic_Neuron_pap1_vs_control
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+Glutamatergic_Neuron_pap1_vs_control  <- resDF
+
+table(Glutamatergic_Neuron_pap1_vs_control$Expression.Padjust)
+
+write.csv(Glutamatergic_Neuron_pap1_vs_control, file = 'Glutamatergic_Neuron_pap1_vs_control.csv')
+
+
+## Glutamatergic_Neuron_pap1_vs_control Volcano
+
+resDF <- Glutamatergic_Neuron_pap1_vs_control 
+
+resDF$name <- resDF$name
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(12)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(12)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "Glutamatergic_Neuron_Pap1_control",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("Glutamatergic_Neuron_Pap1_control.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+#dev.off()
+
+```
+
+
+```{r Oligodendrocyte Precursor Cells}
+library(readr)
+resDF_Oligodendrocyte_PrecursorCell_Pap1_vs_Control <- read_csv("resDF.Oligodendrocyte.PrecursorCell.Pap1.vs.Control.csv")
+
+## Glutamatergic_Neuron_pap1_vs_control
+
+resDF <- resDF_Oligodendrocyte_PrecursorCell_Pap1_vs_Control
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+Oligodendrocyte_PrecursorCell_Pap1_vs_Control  <- resDF
+
+table(Oligodendrocyte_PrecursorCell_Pap1_vs_Control$Expression.Padjust)
+
+write.csv(Oligodendrocyte_PrecursorCell_Pap1_vs_Control, file = 'Oligodendrocyte_PrecursorCell_Pap1_vs_Control.csv')
+
+
+## Oligodendrocyte_PrecursorCell_pap1_vs_control Volcano
+
+resDF <- Oligodendrocyte_PrecursorCell_Pap1_vs_Control
+
+resDF$name <- resDF$name
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(12)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(12)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "Oligodendrocyte_PrecursorCell_Pap1_vs_Control",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("Oligodendrocyte_PrecursorCell_Pap1_vs_Control.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+#dev.off()
+
+```
+
+
+```{r Percentage of DEG Bar plot}
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(readr)
+
+library(readr)
+PAP1_DEG_Table_FINAL <- read_csv("~/Desktop/PAP1.Celltype.DEG/FINAL.Tables/PAP1.DEG.Table.FINAL.csv")
+
+df <- PAP1_DEG_Table_FINAL
+
+# Calculate Percent
+df$Percent <- round((df$Total_Significant / df$Total_Genes) * 100, 1)
+
+# Set custom colors matching the plot
+custom_colors <- c("Astrocytes" = "firebrick",
+                   "Glutamatergic Neuron" = "salmon",
+                   "Microglia" = "darkgreen",
+                   "Oligodendrocyte" = "cyan",
+                   "GABAergic Neuron" = "blue",
+                   "Oligodendrocyte Precursor" = "orange",
+                   "Endothelial" = "purple")
+
+# Create the bar plot
+ggplot(df, aes(x = reorder(Celltype, -Percent), y = Percent, fill = Celltype)) +
+    geom_bar(stat = "identity", width = 0.8) +
+    geom_text(aes(label = paste0(Percent, "%")), 
+              vjust = -0.5, size = 5, color = "black") +
+    scale_fill_manual(values = custom_colors) +
+    theme_minimal(base_size = 14) +
+    theme(legend.position = "right",
+          axis.text.x = element_text(face = "bold", angle = 20, hjust = 1),
+          plot.title = element_text(face = "bold", size = 16, hjust = 0.5)) +
+    labs(title = "ShK vs. PBS",
+         y = "Percentage", x = NULL, fill = "Celltype") +
+    # Add UP and DOWN gene labels below bars
+    geom_text(aes(y = -2, label = paste0("UP: ", UP)), color = "blue", vjust = 1, size = 4.2) +
+    geom_text(aes(y = -6, label = paste0("DOWN: ", DOWN)), color = "darkblue", vjust = 1, size = 4.2) +
+    expand_limits(y = -8)  # Leave space at the bottom for UP/DOWN text
+
+
+### PART2
+
+library(readr)
+
+
+df <- PAP1_DEG_Table_FINAL
+
+df <- as.data.frame(df)
+# Add percentage of total significant genes
+df <- df %>%
+    mutate(Percent_Total_Significant = round((Total_Significant / Total_Genes) * 100, 2))
+
+# Reshape to long format
+df_long <- df %>%
+    pivot_longer(cols = c(UP, DOWN), names_to = "Direction", values_to = "Count") %>%
+    mutate(
+        Percent = round((Count / Total_Genes) * 100, 2),
+        Celltype = factor(Celltype, levels = df$Celltype[order(-df$Percent_Total_Significant)])
+    )
+
+# Get top labels for total significant % above the bars
+df_top_labels <- df %>%
+    select(Celltype, Percent_Total_Significant) %>%
+    mutate(Celltype = factor(Celltype, levels = df$Celltype[order(-Percent_Total_Significant)]))
+
+# Direction colors
+direction_colors <- c("UP" = "red", "DOWN" = "steelblue")
+
+# Plot
+ggplot(df_long, aes(x = Celltype, y = Percent, fill = Direction)) +
+```
+
+
+```{r Percentage of DEG Bar plot}
+geom_bar(stat = "identity", width = 0.8, color = "black") +
+    geom_text(aes(label = paste0(Percent, "%")),
+              position = position_stack(vjust = 0.5), size = 4, color = "white") +
+    geom_text(data = df_top_labels,
+              aes(x = Celltype, y = Percent_Total_Significant + 2,
+                  label = paste0("Total: ", Percent_Total_Significant, "%")),
+              inherit.aes = FALSE,
+              size = 4.5, fontface = "bold") +
+    scale_fill_manual(values = direction_colors) +
+    theme_minimal(base_size = 14) +
+    theme(
+        axis.text.x = element_text(face = "bold", angle = 20, hjust = 1),
+        legend.title = element_blank()
+    ) +
+    labs(title = "PAP1 vs. Control",
+         x = NULL, y = "Percentage of Total Genes")
+
+```
+
+
+```{r GO plot FOR Astrocyte}
+library(readr)
+Astrocyte_TOP_GO_plot <- read_csv("/Users/usri/Desktop/PAP1.Celltype.DEG/NEW.Cut.off/Astrocyte.TOP.GO.plot.csv")
+
+top_go_plot_data <- Astrocyte_TOP_GO_plot %>%
+    group_by(Regulation) %>%
+    ungroup() %>%
+    arrange(desc(Zscore))
+
+# Step 4: Set factor levels for plotting
+top_go_plot_data$Description <- factor(
+    top_go_plot_data$Description,
+    levels = rev(top_go_plot_data$Description)
+)
+
+top_go_plot_data$Regulation <- factor(
+    top_go_plot_data$Regulation,
+    levels = c("Upregulated", "Downregulated")
+)
+
+plot_go <- ggplot(top_go_plot_data, aes(x = Zscore, y = Description, fill = Regulation)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = GeneSymbols,
+                  hjust = ifelse(Zscore > 0, -0.1, 1.1)),  # <-- fixed line
+              size = 2, fontface = "italic") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.8) +
+    scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue")) +
+    theme_minimal(base_size = 14) +
+    theme(
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y = element_text(size = 12, face = "bold"),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.title = element_text(face = "bold"),
+        legend.position = "none"
+    ) +
+    labs(
+        title = "GO:Astrocyte PAP1 vs. Control",
+        x = "Z-score",
+        y = "GO Term",
+        fill = "Regulation"
+    ) +
+    xlim(min(top_go_plot_data$Zscore) - 2,
+         max(top_go_plot_data$Zscore) + 2)
+
+```
+
+
+
+```{r GO plot FOR Microglia}
+library(readr)
+Top_GO_Microglia_PAP1_vs_Control <- read_csv("Top.GO.Microglia.PAP1.vs.Control.csv")
+
+top_go_plot_data <- Top_GO_Microglia_PAP1_vs_Control %>%
+    group_by(Regulation) %>%
+    ungroup() %>%
+    arrange(desc(Zscore))
+
+# Step 4: Set factor levels for plotting
+top_go_plot_data$Description <- factor(
+    top_go_plot_data$Description,
+    levels = rev(top_go_plot_data$Description)
+)
+
+top_go_plot_data$Regulation <- factor(
+    top_go_plot_data$Regulation,
+    levels = c("Upregulated", "Downregulated")
+)
+
+plot_go <- ggplot(top_go_plot_data, aes(x = Zscore, y = Description, fill = Regulation)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = GeneSymbols,
+                  hjust = ifelse(Zscore > 0, -0.1, 1.1)),  # <-- fixed line
+              size = 2, fontface = "italic") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.8) +
+    scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue")) +
+    theme_minimal(base_size = 14) +
+    theme(
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y = element_text(size = 12, face = "bold"),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.title = element_text(face = "bold"),
+        legend.position = "none"
+    ) +
+    labs(
+        title = "GO:Astrocyte PAP1 vs. Control",
+        x = "Z-score",
+        y = "GO Term",
+        fill = "Regulation"
+    ) +
+    xlim(min(top_go_plot_data$Zscore) - 2,
+         max(top_go_plot_data$Zscore) + 2)
+```
+
+
+
+```{r GABAergic GO PAP1}
+resDF_GABA_ergic_Neuron_Pap1_vs_control <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.Endothelial/resDF.GABA.ergic.Neuron.Pap1.vs.control.csv")
+table(resDF_GABA_ergic_Neuron_Pap1_vs_control$diffexpressed)
+
+
+resDF <- resDF_GABA_ergic_Neuron_Pap1_vs_control
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+GABA_ergic_Neuron_Pap1_vs_control  <- resDF
+
+table(GABA_ergic_Neuron_Pap1_vs_control$Expression.Padjust)
+
+### GO plot for GABA_ergic_Neuron_Pap1_vs_control
+
+### Load Required Libraries
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+
+### Load and prepare input data
+resDF <- GABA_ergic_Neuron_Pap1_vs_control
+
+### Subset UP and DOWN regulated genes
+GABA_ergic.UP <- subset(resDF, Expression.Padjust == "UP")$name
+GABA_ergic.DOWN <- subset(resDF, Expression.Padjust == "DOWN")$name
+
+### Run GO Enrichment (BP, MF, CC)
+go_up <- enrichGO(
+  gene = GABA_ergic.UP,
+  OrgDb = org.Mm.eg.db,
+  keyType = "SYMBOL",
+  ont = "ALL",
+  pAdjustMethod = "BH",
+  qvalueCutoff = 1,
+  readable = FALSE
+)
+
+go_down <- enrichGO(
+  gene = GABA_ergic.DOWN ,
+  OrgDb = org.Mm.eg.db,
+  keyType = "SYMBOL",
+  ont = "ALL",
+  pAdjustMethod = "BH",
+  qvalueCutoff = 1,
+  readable = FALSE
+)
+
+### Extract results and add labels
+GABA_ergic.GO.UP.result <- go_up@result %>%
+  mutate(
+    logFDR = -log10(p.adjust),
+    Expression = "UP",
+    Type = "PAP1.vs.Control"
+  )
+
+GABA_ergic.GO.DOWN.result <- go_down@result %>%
+  mutate(
+    logFDR = -log10(p.adjust),
+    Expression = "DOWN",
+    Type = "PAP1.vs.Control"
+  )
+
+### Save results
+saveRDS(GABA_ergic.GO.UP.result, 'GABA_ergic.GO.UP.result.rds')
+write.csv(GABA_ergic.GO.UP.result, 'GABA_ergic.GO.UP.result.csv')
+saveRDS(GABA_ergic.GO.DOWN.result, 'GABA_ergic.GO.DOWN.result.rds')
+write.csv(GABA_ergic.GO.DOWN.result, 'GABA_ergic.GO.DOWN.result.csv')
+
+### Combine and prepare for plotting
+go_combined <- bind_rows(
+GABA_ergic.GO.UP.result %>% mutate(Regulation = "Upregulated"),
+  GABA_ergic.GO.DOWN.result %>% mutate(Regulation = "Downregulated")
+)
+
+go_combined <- go_combined %>%
+  mutate(
+    Zscore = ifelse(Regulation == "Downregulated", -logFDR, logFDR),
+    GeneSymbols = sapply(strsplit(geneID, "/"), function(g) {
+      unique_genes <- unique(g)
+      paste(head(unique_genes, 3), collapse = ", ")
+    })
+  )
+
+### Top 5 from each regulation
+Top_GO_GABAergic_Neuron_Pap1_VS_Control <- read_csv("~/Desktop/PAP1.Celltype.DEG/FINAL.Tables/Top.GO.GABAergic.Neuron.Pap1.VS.Control.csv")
+
+
+top_go_plot_data <- Top_GO_GABAergic_Neuron_Pap1_VS_Control %>%
+  group_by(Regulation) %>%
+  slice_max(order_by = abs(Zscore), n = 10) %>%
+  ungroup() %>%
+  arrange(desc(Zscore))
+
+top_go_plot_data$Description <- factor(
+  top_go_plot_data$Description,
+  levels = rev(top_go_plot_data$Description)
+)
+
+top_go_plot_data$Regulation <- factor(
+  top_go_plot_data$Regulation,
+  levels = c("Upregulated", "Downregulated")
+)
+
+### Plot
+
+plot_go <- ggplot(top_go_plot_data, aes(x = Zscore, y = Description, fill = Regulation)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = GeneSymbols),
+            hjust = ifelse(top_go_plot_data$Zscore > 0, -0.1, 1.1),
+            size = 2, fontface = "italic") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.8) +
+  scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue")) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, size = 1),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_text(size = 12, face = "bold"),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.title = element_text(face = "bold"),
+    legend.position = "none"
+  ) +
+  labs(
+    title = "GO:GABA_ergic Neuron PAP1.vs.Control",
+    x = "Z-score",
+    y = "GO Term",
+    fill = "Regulation"
+  ) +
+  xlim(min(top_go_plot_data$Zscore) - 2, max(top_go_plot_data$Zscore) + 2)
+
+
+plot_go
+
+
+x_limit <- max(abs(top_go_plot_data$Zscore)) + 2
+
+plot_go <- ggplot(top_go_plot_data, aes(x = Zscore, y = Description, fill = Regulation)) +
+    geom_bar(stat = "identity") +
+    geom_text(aes(label = GeneSymbols),
+              hjust = ifelse(top_go_plot_data$Zscore > 0, -0.1, 1.1),
+              size = 2, fontface = "italic") +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.8) +
+    scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue")) +
+    theme_minimal(base_size = 14) +
+    theme(
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y = element_text(size = 12, face = "bold"),
+        plot.title = element_text(face = "bold", hjust = 0.5),
+        legend.title = element_text(face = "bold"),
+        legend.position = "none"
+    ) +
+    labs(
+        title = "GO:GABA_ergic Neuron PAP1.vs.Control",
+        x = "Z-score",
+        y = "GO Term",
+        fill = "Regulation"
+    ) +
+    xlim(-x_limit, x_limit)
+
+### Save Plot & Data
+ggsave("GO_GABA_ergic Neuron.PAP1.pdf", plot = plot_go, width = 10, height = 6)
+write.csv(top_go_plot_data, 'Top.GO_GABA_ergic Neuron.PAP1.csv')
+write.csv(go_combined, 'GO_combined.GABA_ergic Neuron.PAP1.csv')
+
+```
+
+
+```{r Glutamatergic GO PAP1}
+resDF_Glutamatergic_Neuron_pap1_vs_control <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.GABAergic.Neurons/resDF.Glutamatergic.Neuron.pap1.vs.control.csv")
+table(resDF_Glutamatergic_Neuron_pap1_vs_control$diffexpressed)
+
+resDF <- resDF_Glutamatergic_Neuron_pap1_vs_control
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+Glutamatergic_Neuron_pap1_vs_control  <- resDF
+
+table(Glutamatergic_Neuron_pap1_vs_control$Expression.Padjust)
+
+### GO plot for Glutamatergic_Neuron_pap1_vs_control
+
+### Load Required Libraries
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+
+### Load and prepare input data
+resDF <- Glutamatergic_Neuron_pap1_vs_control
+
+### Subset UP and DOWN regulated genes
+ Glutamatergic_Neuron.UP <- subset(resDF, Expression.Padjust == "UP")$name
+ Glutamatergic_Neuron.DOWN <- subset(resDF, Expression.Padjust == "DOWN")$name
+
+### Run GO Enrichment (BP, MF, CC)
+go_up <- enrichGO(
+  gene =  Glutamatergic_Neuron.UP,
+  OrgDb = org.Mm.eg.db,
+  keyType = "SYMBOL",
+  ont = "ALL",
+  pAdjustMethod = "BH",
+  qvalueCutoff = 1,
+  readable = FALSE
+)
+
+go_down <- enrichGO(
+  gene = Glutamatergic_Neuron.DOWN,
+  OrgDb = org.Mm.eg.db,
+  keyType = "SYMBOL",
+  ont = "ALL",
+  pAdjustMethod = "BH",
+  qvalueCutoff = 1,
+  readable = FALSE
+)
+
+
+### Extract results and add labels
+Glutamatergic_Neuron.GO.UP.result <- go_up@result %>%
+  mutate(
+    logFDR = -log10(p.adjust),
+    Expression = "UP",
+    Type = "PAP1.vs.Control"
+  )
+
+Glutamatergic_Neuron.GO.DOWN.result <- go_down@result %>%
+  mutate(
+    logFDR = -log10(p.adjust),
+    Expression = "DOWN",
+    Type = "PAP1.vs.Control"
+  )
+
+### Save results
+saveRDS(Glutamatergic_Neuron.GO.UP.result, 'Glutamatergic_Neuron.GO.UP.result.rds')
+write.csv(Glutamatergic_Neuron.GO.UP.result, 'Glutamatergic_Neuron.GO.UP.result.csv')
+saveRDS(Glutamatergic_Neuron.GO.DOWN.result, 'Glutamatergic_Neuron.GO.DOWN.result.rds')
+write.csv(Glutamatergic_Neuron.GO.DOWN.result, 'Glutamatergic_Neuron.GO.DOWN.result.csv')
+
+
+### Combine and prepare for plotting
+go_combined <- bind_rows(
+Glutamatergic_Neuron.GO.UP.result %>% mutate(Regulation = "Upregulated"),
+  Glutamatergic_Neuron.GO.DOWN.result %>% mutate(Regulation = "Downregulated")
+)
+
+go_combined <- go_combined %>%
+  mutate(
+    Zscore = ifelse(Regulation == "Downregulated", -logFDR, logFDR),
+    GeneSymbols = sapply(strsplit(geneID, "/"), function(g) {
+      unique_genes <- unique(g)
+      paste(head(unique_genes, 3), collapse = ", ")
+    })
+  )
+
+write.csv(go_combined, 'GO_combined.Glutamatergic_Neuron_Pap1_VS_Control.csv')
+
+## plot GO
+
+TOP_Glutamatergic_GO_PAP1_Final <- read_csv("~/Desktop/PAP1.Celltype.DEG/FINAL.Tables/TOP.Glutamatergic.GO.PAP1.Final.csv")
+
+top_go_plot_data <- top_go_plot_data %>%
+  distinct(Description, .keep_all = TRUE)
+
+top_go_plot_data$Description <- factor(
+  top_go_plot_data$Description,
+  levels = rev(top_go_plot_data$Description)
+)
+
+top_go_plot_data$Regulation <- factor(
+  top_go_plot_data$Regulation,
+  levels = c("Upregulated", "Downregulated")
+)
+
+plot_go <- ggplot(top_go_plot_data, aes(x = Zscore, y = Description, fill = Regulation)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = GeneSymbols),
+            hjust = ifelse(top_go_plot_data$Zscore > 0, -0.1, 1.1),
+            size = 2, fontface = "italic") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.8) +
+  scale_fill_manual(values = c("Upregulated" = "red", "Downregulated" = "blue")) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, size = 1),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_text(size = 12, face = "bold"),
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    legend.title = element_text(face = "bold"),
+    legend.position = "none"
+  ) +
+  labs(
+    title = "GO:Glutamatergic Neuron PAP1.vs.Control",
+    x = "Z-score",
+    y = "GO Term",
+    fill = "Regulation"
+  ) +
+  xlim(min(top_go_plot_data$Zscore) - 2, max(top_go_plot_data$Zscore) + 2)
+
+
+plot_go
+
+
+```
+
+
+```{r DEG Bar Plot}
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(readr)
+
+# Read data
+PAP1_DEG_Table_FINAL <- read_csv("~/Desktop/PAP1.Celltype.DEG/FINAL.Tables/PAP1.DEG.Table.FINAL.csv")
+df <- PAP1_DEG_Table_FINAL
+
+# -------------------- PART 1: Basic bar plot with UP/DOWN labels --------------------
+
+# Calculate overall significant percent
+df$Percent <- round((df$Total_Significant / df$Total_Genes) * 100, 1)
+
+# Define custom colors by cell type
+custom_colors <- c(
+    "Astrocytes" = "firebrick",
+    "Glutamatergic Neuron" = "salmon",
+    "Microglia" = "darkgreen",
+    "Oligodendrocyte" = "cyan",
+    "GABAergic Neuron" = "blue",
+    "Oligodendrocyte Precursor" = "orange",
+    "Endothelial" = "purple"
+)
+
+# Plot Part 1
+ggplot(df, aes(x = reorder(Celltype, -Percent), y = Percent, fill = Celltype)) +
+    geom_bar(stat = "identity", width = 0.8) +
+    geom_text(aes(label = paste0(Percent, "%")), 
+              vjust = -0.5, size = 5, color = "black") +
+    scale_fill_manual(values = custom_colors) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "right",
+        axis.text.x = element_text(face = "bold", angle = 20, hjust = 1),
+        plot.title = element_text(face = "bold", size = 16, hjust = 0.5)
+    ) +
+    labs(
+        title = "ShK vs. PBS",
+        y = "Percentage",
+        x = NULL,
+        fill = "Celltype"
+    ) +
+    # Add UP and DOWN labels below bars
+    geom_text(aes(y = -2, label = paste0("UP: ", UP)), color = "blue", vjust = 1, size = 4.2) +
+    geom_text(aes(y = -6, label = paste0("DOWN: ", DOWN)), color = "darkblue", vjust = 1, size = 4.2) +
+    expand_limits(y = -8)
+
+# -------------------- PART 2: Stacked bar plot by UP/DOWN contribution --------------------
+
+# Add percentage of total significant genes
+df <- df %>%
+    mutate(Percent_Total_Significant = round((Total_Significant / Total_Genes) * 100, 2))
+
+# Reorder Celltype by total percent
+ordered_celltypes <- df %>%
+    arrange(desc(Percent_Total_Significant)) %>%
+    pull(Celltype)
+
+# Long format: UP/DOWN contribution
+df_long <- df %>%
+    pivot_longer(cols = c(UP, DOWN), names_to = "Direction", values_to = "Count") %>%
+    mutate(
+        Percent = round((Count / Total_Genes) * 100, 2),
+        Celltype = factor(Celltype, levels = ordered_celltypes)
+    )
+
+# Labels for total percent
+df_top_labels <- df %>%
+    mutate(Celltype = factor(Celltype, levels = ordered_celltypes)) %>%
+    dplyr::select(Celltype, Percent_Total_Significant)
+
+# Colors for UP/DOWN bars
+direction_colors <- c("UP" = "red", "DOWN" = "steelblue")
+
+# Plot Part 2
+ggplot(df_long, aes(x = Celltype, y = Percent, fill = Direction)) +
+    geom_bar(stat = "identity", width = 0.8, color = "black") +
+    geom_text(aes(label = paste0(Percent, "%")),
+              position = position_stack(vjust = 0.5), size = 4, color = "white") +
+    geom_text(data = df_top_labels,
+              aes(x = Celltype, y = Percent_Total_Significant + 2,
+                  label = paste0("Total: ", Percent_Total_Significant, "%")),
+              inherit.aes = FALSE,
+              size = 4.5, fontface = "bold") +
+    scale_fill_manual(values = direction_colors) +
+    theme_minimal(base_size = 14) +
+    theme(
+        axis.text.x = element_text(face = "bold", angle = 20, hjust = 1),
+        legend.title = element_blank(),
+        plot.title = element_text(face = "bold", hjust = 0.5)
+    ) +
+    labs(
+        title = "PAP1 vs. Control",
+        x = NULL,
+        y = "Percentage of Total Genes"
+    )
+
+```
+
+

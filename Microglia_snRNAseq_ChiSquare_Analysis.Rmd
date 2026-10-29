@@ -1,0 +1,191 @@
+# ============================================================
+# MICROGLIAL COMPOSITION ANALYSIS — snRNA-seq
+# DAM vs Homeostatic microglia | Pearson chi-square tests
+# ============================================================
+
+# STEP 01 — PACKAGES AND OUTPUT DIRECTORY --------------------
+# install.packages(c("ggplot2", "dplyr", "tidyr"))
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+output_dir <- "Microglia_ChiSquare_Results"
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+# STEP 02 — INPUT DATA ---------------------------------------
+# Percentages are rounded values from plots. If exact per-cell
+# assignments are available, use actual counts instead.
+microglia_table <- data.frame(
+  Group = c("WT", "Control", "PAP1", "PBS", "ShK"),
+  Total_cells = c(200, 1005, 836, 1366, 705),
+  DAM_percent = c(11.0, 57.3, 60.4, 57.4, 70.2),
+  Homeostatic_percent = c(89.0, 42.7, 39.6, 42.6, 29.8)
+)
+stopifnot(all(abs(microglia_table$DAM_percent +
+                  microglia_table$Homeostatic_percent - 100) < 1e-8))
+
+# STEP 03 — RECONSTRUCT CELL COUNTS ---------------------------
+microglia_table <- microglia_table %>%
+  mutate(
+    DAM = round(Total_cells * DAM_percent / 100),
+    Homeostatic = Total_cells - DAM,
+    DAM_percent_reconstructed = 100 * DAM / Total_cells,
+    Homeostatic_percent_reconstructed = 100 * Homeostatic / Total_cells
+  )
+print(microglia_table)
+write.csv(microglia_table,
+          file.path(output_dir, "Microglia_Composition_Table.csv"),
+          row.names = FALSE)
+
+# STEP 04 — BUILD CONTINGENCY TABLES --------------------------
+make_contingency <- function(group1, group2, dat = microglia_table) {
+  chosen <- dat[match(c(group1, group2), dat$Group), ]
+  if (anyNA(chosen$Group)) stop("One or more group names not found")
+  tab <- as.matrix(chosen[, c("DAM", "Homeostatic")])
+  rownames(tab) <- chosen$Group
+  colnames(tab) <- c("DAM", "Homeostatic")
+  tab
+}
+
+WT_Control <- make_contingency("WT", "Control")
+PAP1_Control <- make_contingency("PAP1", "Control")
+ShK_PBS <- make_contingency("ShK", "PBS")
+
+print(WT_Control)
+print(PAP1_Control)
+print(ShK_PBS)
+
+write.csv(WT_Control, file.path(output_dir, "Contingency_WT_vs_Control.csv"))
+write.csv(PAP1_Control, file.path(output_dir, "Contingency_PAP1_vs_Control.csv"))
+write.csv(ShK_PBS, file.path(output_dir, "Contingency_ShK_vs_PBS.csv"))
+
+# STEP 05 — PEARSON CHI-SQUARE TESTS --------------------------
+# correct = FALSE reproduces the original analysis.
+# Chi-square assumes independent observations; pooled nuclei from
+# the same mouse are not independent biological replicates.
+test_WT_Control <- chisq.test(WT_Control, correct = FALSE)
+test_PAP1_Control <- chisq.test(PAP1_Control, correct = FALSE)
+test_ShK_PBS <- chisq.test(ShK_PBS, correct = FALSE)
+
+print(test_WT_Control)
+print(test_PAP1_Control)
+print(test_ShK_PBS)
+
+# STEP 06 — COMBINE TEST RESULTS ------------------------------
+tests <- list(
+  "WT vs Control" = test_WT_Control,
+  "PAP1 vs Control" = test_PAP1_Control,
+  "ShK vs PBS" = test_ShK_PBS
+)
+
+results <- data.frame(
+  Comparison = names(tests),
+  Chi_square = vapply(tests, function(x) unname(x$statistic), numeric(1)),
+  df = vapply(tests, function(x) unname(x$parameter), numeric(1)),
+  P_value = vapply(tests, function(x) x$p.value, numeric(1)),
+  Min_expected_count = vapply(tests, function(x) min(x$expected), numeric(1)),
+  row.names = NULL
+)
+
+# STEP 07 — MULTIPLE TESTING CORRECTION -----------------------
+results <- results %>%
+  mutate(
+    FDR = p.adjust(P_value, method = "BH"),
+    Significance = case_when(
+      FDR < 0.0001 ~ "****",
+      FDR < 0.001 ~ "***",
+      FDR < 0.01 ~ "**",
+      FDR < 0.05 ~ "*",
+      TRUE ~ "ns"
+    )
+  )
+print(results)
+write.csv(results,
+          file.path(output_dir, "Microglia_ChiSquare_Results_BH_FDR.csv"),
+          row.names = FALSE)
+
+# STEP 08 — LONG-FORM COMPOSITION TABLE ----------------------
+plot_df <- microglia_table %>%
+  select(Group, Total_cells, DAM, Homeostatic) %>%
+  pivot_longer(cols = c(DAM, Homeostatic),
+               names_to = "State", values_to = "Cells") %>%
+  mutate(
+    Group = factor(Group, levels = c("WT", "Control", "PAP1", "PBS", "ShK")),
+    State = factor(State, levels = c("Homeostatic", "DAM")),
+    Percent = 100 * Cells / Total_cells
+  )
+write.csv(plot_df,
+          file.path(output_dir, "Microglia_Composition_Long.csv"),
+          row.names = FALSE)
+
+# STEP 09 — STACKED PERCENTAGE BAR PLOT -----------------------
+p_composition <- ggplot(plot_df, aes(x = Group, y = Percent, fill = State)) +
+  geom_col(width = 0.7, color = "white", linewidth = 0.3) +
+  geom_text(aes(label = paste0(round(Percent, 1), "%")),
+            position = position_stack(vjust = 0.5), size = 3.5) +
+  scale_fill_manual(values = c(Homeostatic = "#4477AA", DAM = "#CC6677")) +
+  scale_y_continuous(limits = c(0, 100), expand = c(0, 0)) +
+  labs(x = NULL, y = "Microglial composition (%)", fill = "Cell state") +
+  theme_classic(base_size = 13) +
+  theme(legend.position = "top")
+print(p_composition)
+ggsave(file.path(output_dir, "Microglia_Stacked_Composition.pdf"),
+       p_composition, width = 7.5, height = 5)
+ggsave(file.path(output_dir, "Microglia_Stacked_Composition.png"),
+       p_composition, width = 7.5, height = 5, dpi = 300)
+
+# STEP 10 — DAM PERCENTAGE BAR PLOT ---------------------------
+dam_df <- microglia_table %>%
+  mutate(Group = factor(Group, levels = c("WT", "Control", "PAP1", "PBS", "ShK")))
+
+p_dam <- ggplot(dam_df, aes(x = Group, y = DAM_percent_reconstructed)) +
+  geom_col(fill = "#CC6677", width = 0.65) +
+  geom_text(aes(label = sprintf("%.1f%%", DAM_percent_reconstructed)),
+            vjust = -0.5, size = 4) +
+  scale_y_continuous(limits = c(0, 85), expand = c(0, 0)) +
+  labs(x = NULL, y = "DAM microglia (%)") +
+  theme_classic(base_size = 13)
+print(p_dam)
+ggsave(file.path(output_dir, "DAM_Percentage_Barplot.pdf"),
+       p_dam, width = 7, height = 5)
+ggsave(file.path(output_dir, "DAM_Percentage_Barplot.png"),
+       p_dam, width = 7, height = 5, dpi = 300)
+
+# STEP 11 — COMPARISON-SPECIFIC PLOTS -------------------------
+comparison_groups <- list(
+  "WT_vs_Control" = c("WT", "Control"),
+  "PAP1_vs_Control" = c("PAP1", "Control"),
+  "ShK_vs_PBS" = c("ShK", "PBS")
+)
+
+for (nm in names(comparison_groups)) {
+  groups <- comparison_groups[[nm]]
+  tmp <- plot_df %>%
+    filter(as.character(Group) %in% groups) %>%
+    mutate(Group = factor(as.character(Group), levels = groups))
+  p <- ggplot(tmp, aes(x = Group, y = Percent, fill = State)) +
+    geom_col(width = 0.65, color = "white") +
+    scale_fill_manual(values = c(Homeostatic = "#4477AA", DAM = "#CC6677")) +
+    scale_y_continuous(limits = c(0, 100), expand = c(0, 0)) +
+    labs(title = gsub("_", " ", nm), x = NULL,
+         y = "Microglial composition (%)", fill = "Cell state") +
+    theme_classic(base_size = 13)
+  ggsave(file.path(output_dir, paste0(nm, "_Composition.pdf")),
+         p, width = 5, height = 5)
+}
+
+# STEP 12 — SAVE REPRODUCIBILITY INFORMATION ------------------
+saveRDS(list(composition = microglia_table,
+             contingency = list(WT_Control = WT_Control,
+                                PAP1_Control = PAP1_Control,
+                                ShK_PBS = ShK_PBS),
+             tests = tests,
+             results = results),
+        file.path(output_dir, "Microglia_ChiSquare_Analysis.rds"))
+capture.output(sessionInfo(),
+               file = file.path(output_dir, "R_Session_Info.txt"))
+message("Analysis completed. Results saved in: ", normalizePath(output_dir))
+
+# NOTE: For biological inference, analyze counts per mouse rather than
+# pooled cells, e.g. using a binomial mixed model with mouse as a
+# biological unit, or an appropriate replicate-level approach.

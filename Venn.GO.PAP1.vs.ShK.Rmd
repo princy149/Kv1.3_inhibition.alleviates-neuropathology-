@@ -1,0 +1,139 @@
+---
+title: "Venn.GO.PAP1.vs.ShK"
+author: "Dr UPASNA"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r LIBRARY LOAD}
+library(readr)
+library(gridExtra)
+library(DESeq2)
+library(limma)
+library(ggplot2)
+library(pheatmap)
+library(tidyverse)
+library(dplyr)
+library(ComplexHeatmap)
+library(clusterProfiler)
+library(ggpubr)
+library(org.Mm.eg.db)
+#Load files
+KV1.3.Brain.Background <- readRDS("~/Desktop/KV1.3.BRAIN.FEB1.25/KV1.3.Brain.Background.rds")
+```
+
+
+
+```{r GO Enrichment}
+library(readxl)
+ PAP1_UP_VS_Shk_UP_158 <- read_excel("PAP1-UP.VS.Shk-UP_158.xlsx")
+PAP1_UP_VS_Shk_UP_158 <-  PAP1_UP_VS_Shk_UP_158$`PAP1-UP.VS.Shk-UP_158`
+PAP1_UP_VS_Shk_UP_158 
+##
+ X_PAP1_Down_VS_Shk_Down_100 <- read_excel(" PAP1-Down.VS.Shk-Down_100.xlsx")
+ PAP1_Down_VS_Shk_Down_100 <- X_PAP1_Down_VS_Shk_Down_100$`PAP1-Down.VS.Shk-Down_100`
+ PAP1_Down_VS_Shk_Down_100
+```
+
+```{r GO Enrichment ANALYSIS}
+#####Run Enrichment analysis code
+go_up.PAP1_UP_VS_Shk_UP_158 <- enrichGO(
+    gene         = PAP1_UP_VS_Shk_UP_158,
+    universe     = KV1.3.Brain.Background,
+    OrgDb        = org.Mm.eg.db,
+    keyType      = "SYMBOL",
+    ont          = "ALL",
+    pAdjustMethod = "none",
+    pvalueCutoff = 1, # Setting to 1 removes strict significance filtering
+    qvalueCutoff = 1  # Setting to 1 removes strict significance filtering
+)
+go_up.PAP1_UP_VS_Shk_UP_158
+# Convert to data frame
+go_results <- as.data.frame(go_up.PAP1_UP_VS_Shk_UP_158)
+# Convert GeneRatio (e.g., "5/100") into numeric values
+go_results$GeneRatio_numeric <- sapply(go_results$GeneRatio, function(x) {
+    eval(parse(text = x))  # Convert "5/100" to 0.05
+})
+# Compute Approximate NES (Z-score of GeneRatio)
+go_results$NES <- (go_results$GeneRatio_numeric - mean(go_results$GeneRatio_numeric)) / 
+                  sd(go_results$GeneRatio_numeric)
+
+go_results$zscore <- go_results$NES
+go_results.PAP1_UP_VS_Shk_UP_158 <- go_results
+head (go_results.PAP1_UP_VS_Shk_UP_158, 3)
+# Select top 14 GO terms
+top_terms <- head(go_results.PAP1_UP_VS_Shk_UP_158, 14)
+# Generate the plot
+ggplot(top_terms, aes(x = reorder(Description, NES), y = NES, fill = NES)) +
+    geom_bar(stat = "identity") +
+    coord_flip() +
+    scale_fill_gradient(low = "blue", high = "red") +
+    labs(title = "GO: PAP1_UP_VS_Shk_UP_158", 
+         x = "GO Term", 
+         y = "Normalized Enrichment Score (NES)") +
+    theme_classic() +  # Use a clean theme
+    theme(
+        text = element_text(size = 16), # Increase overall text size
+        axis.text = element_text(size = 14), # Increase axis tick label size
+        axis.title = element_text(size = 16, face = "bold"), # Increase axis title size
+        plot.title = element_text(size = 18, face = "bold", hjust = 0.5), # Bigger and centered title
+        legend.text = element_text(size = 14), # Increase legend text size
+        legend.title = element_text(size = 16, face = "bold") # Increase legend title size
+    )  # Correctly close the theme function here
+```
+
+
+```{r PAP1_Down_VS_Shk_Down_100.enrichment }
+#####Run Enrichment analysis code
+go_up.PAP1_Down_VS_Shk_Down_100 <- enrichGO(
+    gene         = PAP1_Down_VS_Shk_Down_100,
+    universe     = KV1.3.Brain.Background,
+    OrgDb        = org.Mm.eg.db,
+    keyType      = "SYMBOL",
+    ont          = "ALL",
+    pAdjustMethod = "none",
+    pvalueCutoff = 1, # Setting to 1 removes strict significance filtering
+    qvalueCutoff = 1  # Setting to 1 removes strict significance filtering
+)
+go_up.PAP1_Down_VS_Shk_Down_100
+# Convert to data frame
+go_results <- as.data.frame(go_up.PAP1_Down_VS_Shk_Down_100)
+# Convert GeneRatio (e.g., "5/100") into numeric values
+go_results$GeneRatio_numeric <- sapply(go_results$GeneRatio, function(x) {
+    eval(parse(text = x))  # Convert "5/100" to 0.05
+})
+# Compute Approximate NES (Z-score of GeneRatio)
+go_results$NES <- (go_results$GeneRatio_numeric - mean(go_results$GeneRatio_numeric)) / 
+                  sd(go_results$GeneRatio_numeric)
+
+go_results$zscore <- go_results$NES
+go_results.PAP1_Down_VS_Shk_Down_100 <- go_results
+head (go_results.PAP1_Down_VS_Shk_Down_100, 3)
+# Select top 14 GO terms
+top_terms <- head(go_results.PAP1_Down_VS_Shk_Down_100, 14)
+# Generate the plot
+ggplot(top_terms, aes(x = reorder(Description, NES), y = NES, fill = NES)) +
+    geom_bar(stat = "identity") +
+    coord_flip() +
+    scale_fill_gradient(low = "blue", high = "red") +
+    labs(title = "GO:PAP1.Down.VS.Shk.Down-100", 
+         x = "GO Term", 
+         y = "Normalized Enrichment Score (NES)") +
+    theme_classic() +  # Use a clean theme
+    theme(
+        text = element_text(size = 16), # Increase overall text size
+        axis.text = element_text(size = 14), # Increase axis tick label size
+        axis.title = element_text(size = 16, face = "bold"), # Increase axis title size
+        plot.title = element_text(size = 18, face = "bold", hjust = 0.5), # Bigger and centered title
+        legend.text = element_text(size = 14), # Increase legend text size
+        legend.title = element_text(size = 16, face = "bold") # Increase legend title size
+    )  # Correctly close the theme function here
+```
+
+

@@ -1,0 +1,845 @@
+---
+title: "CSF.KV1.3.Blood.contamination"
+author: "Dr UPASNA"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r load data}
+# ================================
+# 1. Load libraries
+# ================================
+library(pheatmap)
+library(EnhancedVolcano)
+library(tidyverse)
+library(M3C)
+library(ggplot2)
+library(limma)
+library(factoextra)
+library(variancePartition)
+library(BiocParallel)
+library(gridExtra)
+library(ggrepel)
+library(patchwork)
+
+# ================================
+# 2. Load data
+# ================================
+CSF_data <- read.csv("~/Desktop/KV1.3_CSF.PAP1.30july2025/CSF_PAP1_Proteinid_50percent_IMPUTATION_matrix.unique.csv",
+                     row.names = 1)
+CSF_metadata <- readRDS("~/Desktop/KV1.3_CSF.PAP1.30july2025/CSF.KV1.3.Proteomics.Analysis/CSF_PAP1_Metadata.rds")
+CSF_metadata <- CSF_metadata[colnames(CSF_data), ]  # match order
+
+# ================================
+# 3. Define blood contamination markers (mouse) in lowercase
+# ================================
+#blood_markers_mouse <- c("cd24", "cd235a", "cd45", "ter119", "glya", "cd71","cd49d", "hla-dr", "cd33", "cd11b", "hbb", "spi1", "alas2", "hba2")
+
+#blood_markers_mouse <- c("Hba", "Hbb", "Hbd", "Alb", "Tf", "Fga", "Fgb", "Fgg", "Hp", "Hpx", "Apoa1", "Apoa2", "Apoe")
+blood_markers_mouse <- c("Alb", "Ighg1", "Ighg2b", "Ighg2c", "Ighg3", "Ighm", "Trf", "Fga", "Fgb", "Fgg", "Hba-a1", "Hbb-b1", "C3", "C4a", "C4b", "Serpina1a", "A2m", "Apoa1", "Apob", "Apoe", "Hp", "Fth1", "Ftl1", "Cp", "F8", "Vwf", "F2", "Serpinc1", "Plg", "Vegfa")
+
+blood_markers <- blood_markers_mouse[blood_markers_mouse %in% rownames(CSF_data)]
+
+if (length(blood_markers) == 0) stop("No blood contamination markers found in dataset!")
+
+# ================================
+# 4. Blood contamination score
+# ================================
+blood_matrix <- t(CSF_data[blood_markers, ])
+blood_score <- rowMeans(blood_matrix)
+CSF_metadata$blood_score <- blood_score
+
+# ================================
+# 5. VPA BEFORE correction
+# ================================
+form <- ~ blood_score + (1|Group)
+vpa_before <- fitExtractVarPartModel(as.matrix(CSF_data), form, CSF_metadata, BPPARAM = SnowParam(4))
+p1 <- plotVarPart(vpa_before) + ggtitle("VPA - BEFORE Blood Correction")
+p1
+
+blood_var_before <- mean(vpa_before["blood_score", ])
+
+# ================================
+# 6. PCA BEFORE correction (annotated)
+# ================================
+pca_before <- prcomp(t(CSF_data), scale. = TRUE)
+p_pca_before <- fviz_pca_ind(pca_before, geom = "point", habillage = CSF_metadata$Group, addEllipses = TRUE) +
+                ggtitle("PCA - BEFORE Blood Correction")
+
+blood_loadings_before <- as.data.frame(pca_before$rotation)
+blood_loadings_before$Protein <- rownames(blood_loadings_before)
+blood_annot_before <- blood_loadings_before %>% filter(tolower(Protein) %in% blood_markers_mouse)
+
+p_pca_before <- p_pca_before +
+  geom_text_repel(data = blood_annot_before, aes(x = PC1, y = PC2, label = Protein),
+                  color = "red", size = 10, inherit.aes = FALSE)
+
+
+p_pca_before
+```
+
+
+```{r Part2}
+# ================================
+# 7. Regress out blood effect
+# ================================
+corrected_data <- removeBatchEffect(CSF_data, covariates = CSF_metadata$blood_score)
+
+# ================================
+# 8. VPA AFTER correction
+# ================================
+vpa_after <- fitExtractVarPartModel(as.matrix(corrected_data), form, CSF_metadata, BPPARAM = SnowParam(4))
+head(vpa_after, 5)
+
+
+# Check for NA values
+summary(vpa_after)
+
+# Replace NA with 0 (or filter them out)
+vpa_after_clean <- vpa_after
+vpa_after_clean[is.na(vpa_after_clean)] <- 0
+
+# Re-plot VPA after cleaning
+p2 <- plotVarPart(vpa_after_clean) + 
+  ggtitle("VPA - AFTER Blood Correction")
+
+p2
+
+# Recalculate blood variance effect
+blood_var_after <- mean(vpa_after_clean["blood_score", ], na.rm = TRUE)
+variance_reduction <- ((blood_var_before - blood_var_after) / blood_var_before) * 100
+
+cat("Blood effect variance reduced by:", round(variance_reduction, 2), "%\n")
+
+# Annotated plot
+p2_annotated <- p2 +
+  annotate("text",
+           x = 2, y = max(vpa_after_clean, na.rm = TRUE) * 0.9,
+           label = paste0("Blood effect ↓ ", round(variance_reduction, 1), "%"),
+           color = "red", size = 5, fontface = "bold")
+
+p2_annotated
+
+
+
+```
+
+
+```{r Third part}
+# 9. PCA AFTER correction (annotated)
+# ================================
+pca_after <- prcomp(t(corrected_data), scale. = TRUE)
+p_pca_after <- fviz_pca_ind(pca_after, geom = "point", habillage = CSF_metadata$Group, addEllipses = TRUE) +
+               ggtitle("PCA - AFTER Blood Correction")
+
+blood_loadings_after <- as.data.frame(pca_after$rotation)
+blood_loadings_after$Protein <- rownames(blood_loadings_after)
+blood_annot_after <- blood_loadings_after %>% filter(tolower(Protein) %in% blood_markers_mouse)
+
+p_pca_after <- p_pca_after +
+  geom_text_repel(data = blood_annot_after, aes(x = PC1, y = PC2, label = Protein),
+                  color = "blue", size = 4, inherit.aes = FALSE)
+
+# Combine PCA plots
+p_pca_combined <- p_pca_before | p_pca_after
+
+p_pca_combined
+
+```
+
+
+
+```{r 4th PART}
+# 10. Blood protein paired boxplot
+# ================================
+before_blood <- colMeans(CSF_data[blood_markers, ])
+after_blood  <- colMeans(corrected_data[blood_markers, ])
+
+
+wilcox_result <- wilcox.test(before_blood, after_blood, paired = TRUE)
+cat("Wilcoxon signed-rank test p-value for blood marker reduction:", wilcox_result$p.value, "\n")
+
+blood_df <- data.frame(
+  Sample = rep(colnames(CSF_data), 2),
+  Level = c(before_blood, after_blood),
+  Stage = rep(c("Before", "After"), each = length(before_blood))
+)
+
+head(blood_df, 5)
+
+
+p3 <- ggplot(blood_df, aes(x = Stage, y = Level, group = Sample)) +
+  geom_line(alpha = 0.5) +
+  geom_point(aes(color = Stage), size = 3) +
+  theme_minimal() +
+  ggtitle(paste0("Blood Protein Levels (p = ", signif(wilcox_result$p.value, 3), ")")) +
+  ylab("Mean Blood Protein Intensity")
+
+p3
+
+# ================================
+# 11. Combine all plots into one figure
+# ================================
+final_plot <- (p1 | p2_annotated) / (p_pca_combined | p3)
+final_plot
+
+# ================================
+# 12. Save results
+# ================================
+ggsave("~/Desktop/KV1.3_CSF.PAP1.30july2025/CSF_BloodEffect_VPA_PCA_Annotated.png",
+       final_plot, width = 16, height = 12, dpi = 300)
+
+write.csv(corrected_data,
+          "~/Desktop/KV1.3_CSF.PAP1.30july2025/CSF_PAP1_Proteinid_50percent_IMPUTATION_matrix.blood_corrected.csv")
+
+```
+
+
+
+```{r 5TH DATA}
+# 1 Clean up NA values
+vpa_before_clean <- vpa_before
+vpa_before_clean[is.na(vpa_before_clean)] <- 0
+
+vpa_after_clean <- vpa_after
+vpa_after_clean[is.na(vpa_after_clean)] <- 0
+
+# 2 Extract numeric vectors for blood score variance (as column, not row)
+blood_var_before_vec <- vpa_before_clean$blood_score
+blood_var_after_vec  <- vpa_after_clean$blood_score
+
+# 3️ Calculate mean blood variance reduction
+blood_var_before <- mean(blood_var_before_vec, na.rm = TRUE)
+blood_var_after  <- mean(blood_var_after_vec, na.rm = TRUE)
+
+variance_reduction <- ((blood_var_before - blood_var_after) / blood_var_before) * 100
+cat("Blood effect variance reduced by:", round(variance_reduction, 2), "%\n")
+
+# 4 QC: Top 50 proteins BEFORE correction
+top_idx <- order(blood_var_before_vec, decreasing = TRUE)[1:50]
+
+qc_df <- data.frame(
+  Protein = rownames(vpa_before_clean)[top_idx],
+  BloodVar_Before = blood_var_before_vec[top_idx],
+  BloodVar_After  = blood_var_after_vec[top_idx]
+)
+
+print(qc_df)
+
+# 5 Plot VPA AFTER correction
+p2 <- plotVarPart(vpa_after_clean) +
+  ggtitle("VPA - AFTER Blood Correction")
+
+p2_annotated <- p2 +
+  annotate("text",
+           x = 2, y = max(blood_var_after_vec, na.rm = TRUE) * 0.9,
+           label = paste0("Blood effect ↓ ", round(variance_reduction, 1), "%"),
+           color = "red", size = 5, fontface = "bold")
+
+print(p2_annotated)
+
+
+```
+
+
+```{r Percentage-Based Stacked Bar Plot}
+library(tidyverse)
+
+# Convert to percentage for plotting
+qc_df_long <- qc_df %>%
+  pivot_longer(cols = c(BloodVar_Before, BloodVar_After),
+               names_to = "Stage", values_to = "Variance") %>%
+  group_by(Protein) %>%
+  mutate(Variance_Percent = (Variance / sum(Variance, na.rm = TRUE)) * 100) %>%
+  ungroup()
+
+# Factor ordering by variance before correction (largest to smallest)
+qc_df_long$Protein <- factor(qc_df_long$Protein,
+                              levels = qc_df$Protein[order(qc_df$BloodVar_Before, decreasing = TRUE)])
+
+# Plot stacked bar (percentage-based)
+ggplot(qc_df_long, aes(x = Protein, y = Variance_Percent, fill = Stage)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = c("BloodVar_Before" = "red", "BloodVar_After" = "blue")) +
+  labs(
+    title = "Top 50 Proteins - Blood Effect Variance (Before vs After Correction)",
+    x = "Proteins",
+    y = "Variance Contribution (%)",
+    fill = "Stage"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, size = 6),
+    plot.title = element_text(size = 14, face = "bold")
+  )
+library(variancePartition)
+
+# Reorder proteins by blood effect before correction
+GroupSortOrder <- order(vpa_before_clean[["blood_score"]], decreasing = TRUE)
+
+# Reorder rows for all variance components
+for (i in ls(vpa_before_clean)) { 
+    vpa_before_clean[[i]] <- vpa_before_clean[[i]][GroupSortOrder]
+}
+rownames(vpa_before_clean) <- rownames(vpa_before_clean)[GroupSortOrder]
+
+# Plot top 50 proteins based on blood variance (BEFORE correction)
+plotPercentBars(vpa_before_clean[1:50, ]) +
+    ggtitle("Top 50 Proteins Associated with Blood Effect (Before Correction)")
+
+# After correction
+GroupSortOrder <- order(vpa_after[["blood_score"]], decreasing = TRUE)
+
+for (i in ls(vpa_after)) { 
+    vpa_after[[i]] <- vpa_after[[i]][GroupSortOrder]
+}
+rownames(vpa_after) <- rownames(vpa_after)[GroupSortOrder]
+
+plotPercentBars(vpa_after[1:50, ]) +
+    ggtitle("Top 50 Proteins Associated with Blood Effect (After Correction)")
+```
+
+
+```{r COMBINED PLOTS}
+library(variancePartition)
+library(patchwork)   # for side-by-side plots
+
+# Sort proteins by blood variance BEFORE correction
+GroupSortOrder <- order(vpa_before_clean[["blood_score"]], decreasing = TRUE)
+for (i in ls(vpa_before_clean)) { 
+    vpa_before_clean[[i]] <- vpa_before_clean[[i]][GroupSortOrder]
+}
+rownames(vpa_before_clean) <- rownames(vpa_before_clean)[GroupSortOrder]
+
+# Plot BEFORE correction
+p_before <- plotPercentBars(vpa_before_clean[1:50, ]) +
+    ggtitle("Top 50 Proteins (Blood Effect - BEFORE Correction)")
+
+# Sort proteins by blood variance AFTER correction
+GroupSortOrder <- order(vpa_after[["blood_score"]], decreasing = TRUE)
+for (i in ls(vpa_after)) { 
+    vpa_after[[i]] <- vpa_after[[i]][GroupSortOrder]
+}
+rownames(vpa_after) <- rownames(vpa_after)[GroupSortOrder]
+
+# Plot AFTER correction
+p_after <- plotPercentBars(vpa_after[1:50, ]) +
+    ggtitle("Top 50 Proteins (Blood Effect - AFTER Correction)")
+
+# Combine the two plots side-by-side
+combined_plot <- p_before | p_after
+combined_plot
+
+```
+
+
+
+```{r PCA plot part2}
+library(ggplot2)
+library(patchwork)  # to combine plots
+
+# Perform PCA before correction
+pca_before <- prcomp(t(as.matrix(CSF_data)), scale. = TRUE)
+pca_before_df <- data.frame(
+  PC1 = pca_before$x[, 1],
+  PC2 = pca_before$x[, 2],
+  Group = CSF_metadata$Group
+)
+
+# Plot BEFORE correction
+p_pca_before <- ggplot(pca_before_df, aes(x = PC1, y = PC2, color = Group)) +
+  geom_point(size = 4) +
+  xlab(paste0("PC1 (", round(summary(pca_before)$importance[2, 1] * 100, 1), "% variance)")) +
+  ylab(paste0("PC2 (", round(summary(pca_before)$importance[2, 2] * 100, 1), "% variance)")) +
+  ggtitle("PCA - BEFORE Blood Correction") +
+  theme_bw()
+
+# Perform PCA after correction
+pca_after <- prcomp(t(as.matrix(corrected_data)), scale. = TRUE)
+pca_after_df <- data.frame(
+  PC1 = pca_after$x[, 1],
+  PC2 = pca_after$x[, 2],
+  Group = CSF_metadata$Group
+)
+
+# Plot AFTER correction
+p_pca_after <- ggplot(pca_after_df, aes(x = PC1, y = PC2, color = Group)) +
+  geom_point(size = 4) +
+  xlab(paste0("PC1 (", round(summary(pca_after)$importance[2, 1] * 100, 1), "% variance)")) +
+  ylab(paste0("PC2 (", round(summary(pca_after)$importance[2, 2] * 100, 1), "% variance)")) +
+  ggtitle("PCA - AFTER Blood Correction") +
+  theme_bw()
+
+# Combine the two PCA plots
+combined_pca <- p_pca_before | p_pca_after
+combined_pca
+
+```
+```{r boxplot for blood score}
+# ===========================
+library(ggplot2)
+df <- CSF_metadata
+ggplot(df, aes(x = Group, y = blood_score,  fill = Group)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Blood Score by Group", x = "Group", y = "Blood Score") +
+  theme(legend.position = "none")
+
+############
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+blood_markers <- blood_markers_mouse[blood_markers_mouse %in% rownames(corrected_data)]
+
+if (length(blood_markers) == 0) stop("No blood contamination markers found in dataset!")
+
+# ================================
+# 4. Blood contamination score
+# ================================
+blood_matrix <- t(corrected_data[blood_markers, ])
+blood_score <- rowMeans(blood_matrix)
+CSF_metadata$blood_score.corrected <- blood_score
+
+###
+
+# Convert wide to long
+csf_long <- CSF_metadata %>%
+    pivot_longer(
+        cols = c(blood_score, blood_score.corrected),
+        names_to = "Score_Type",
+        values_to = "Score"
+    )
+
+# Paired sample plot with padding between panels
+p1 <- ggplot(csf_long, aes(x = Score_Type, y = Score, group = ID, color = Treatment)) +
+    geom_line(alpha = 0.4) +
+    geom_point(size = 2) +
+    facet_wrap(~Treatment, scales = "free_y") +
+    theme_minimal(base_size = 14) +
+    labs(
+        title = "Blood Score Change After Correction by Treatment",
+        x = "Score Type",
+        y = "Score"
+    ) +
+    theme(
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        panel.spacing = unit(1.5, "lines"),  # Increase padding between panels
+        strip.text = element_text(face = "bold")
+    )
+
+p1
+
+```
+
+
+```{r Median normalization for corrected data}
+#PCA on corrected data before normalization
+
+# Define a list of 10 distinct colors for the groups
+color_list <- c('darkgreen', 'purple', 'brown', 'orange', 'pink', 'brown', 'grey', 'blue')
+
+# Perform PCA with the specified color vector and other parameters
+pca(corrected_data,
+colvec = color_list,
+labels = CSF_metadata$Treatment,
+controlscale = TRUE,
+scale = 3,
+printres = TRUE,
+printwidth = 25,
+legendtitle = "Treatment")
+
+
+#######
+#colsum median normalization 
+col_sums <- colSums(corrected_data, na.rm = TRUE)
+ # Step 2: Compute the median of column sums
+median_sum <- median(col_sums)
+ # Step 3: Compute normalization factors (scale factors) 
+norm_factors <- median_sum / col_sums
+ # Step 4: Multiply each column by its corresponding normalization factor 
+normalized_data <- sweep(corrected_data, 2, norm_factors, FUN = "*")
+ dim(normalized_data)
+ 
+ #write.csv(normalized_data, file = 'CSF.kv1.3.corrected.data.after.bloodcontamination.Normalized.csv')
+ 
+ #PCA plot after Normalization based on Treatment
+
+# Define a list of 10 distinct colors for the groups
+color_list <- c('darkgreen', 'purple', 'brown', 'orange', 'pink', 'brown', 'grey', 'blue')
+
+# Perform PCA with the specified color vector and other parameters
+pca(normalized_data,
+colvec = color_list,
+labels = CSF_metadata$Treatment,
+controlscale = TRUE,
+scale = 3,
+printres = TRUE,
+printwidth = 25,
+legendtitle = "Treatment")
+
+
+###
+
+#PCA plot after Normalization based on Treatment
+
+# Define a list of 10 distinct colors for the groups
+color_list <- c('darkgreen', 'purple', 'brown', 'orange', 'pink', 'brown', 'grey', 'blue')
+
+# Perform PCA with the specified color vector and other parameters
+pca(normalized_data,
+colvec = color_list,
+labels = CSF_metadata$Group,
+controlscale = TRUE,
+scale = 3,
+printres = TRUE,
+printwidth = 25,
+legendtitle = "Group")
+ 
+```
+
+
+```{r Subsets Metadata and normalized data for DEP analysis}
+
+# --- 1. PAP1 vs Control ---
+meta_pap1_ctrl <- CSF_metadata %>%
+  filter(Treatment %in% c("PAP1", "Control"))
+
+cleanDat_PAP1.vs.Control <- normalized_data[, meta_pap1_ctrl$ID]
+
+# --- 2. SHK vs PBS ---
+meta_shk_pbs <- CSF_metadata %>%
+  filter(Treatment %in% c("SHK", "PBS"))
+
+cleanDat_SHK.vs.PBS <- normalized_data[, meta_shk_pbs$ID]
+
+# --- 3. Control vs WT ---
+meta_ctrl_wt <- CSF_metadata %>%
+  filter(Treatment %in% c("Control", "WT"))
+
+cleanDat_Control.vs.WT <- normalized_data[, meta_ctrl_wt$ID]
+
+# Optional: Check dimensions
+dim(cleanDat_PAP1.vs.Control)
+dim(cleanDat_SHK.vs.PBS)
+dim(cleanDat_Control.vs.WT)
+
+saveRDS(cleanDat_PAP1.vs.Control, file = 'CSF.KV1.3.cleanDat_PAP1.vs.Control.rds')
+saveRDS(meta_pap1_ctrl, file = 'CSF.KV1.3.NumericMeta_PAP1.vs.Control.rds')
+
+saveRDS(cleanDat_SHK.vs.PBS, file = 'CSF.KV1.3.cleanDat_SHK.vs.PBS.rds')
+saveRDS(meta_shk_pbs, file = 'CSF.KV1.3.NumericMeta_SHK.vs.PBS.rds')
+
+saveRDS(cleanDat_Control.vs.WT, file = 'CSF.KV1.3.cleanDat_Control.vs.WT.rds')
+saveRDS(meta_ctrl_wt, file = 'CSF.KV1.3.NumericMeta_Control.vs.WT.rds')
+
+```
+
+
+```{r DEP analysis CSF KV1.3 PAP1 vs. Control}
+#DEP Analysis
+cleanDat <- cleanDat_PAP1.vs.Control
+numericMeta <- meta_pap1_ctrl
+condition <- numericMeta$Group
+#Grouping <- numericMeta$Group
+Grouping <- factor(numericMeta$Group, levels = c("Control","PAP1"))
+source("/Users/usri/Desktop/Screen/parANOVA.dex.R")
+ANOVAout <- parANOVA.dex()
+labelTop <- 10
+FCmin= 0
+flip <- c()
+signifP=0.05
+plotVolc()
+```
+
+
+```{r GO for PAP1 vs. Control}
+library(readr)
+library(clusterProfiler)
+library(org.Mm.eg.db)
+diffEx_PAP1_vs_Control_CSF_KV1_3 <- read_csv("/Users/usri/Desktop/KV1.3_CSF.PAP1.30july2025/CSF.KV1.3.Proteomics.Analysis/diffEx.PAP1_vs_Control.CSF.KV1.3.csv")
+## ---- Config ----
+p_thresh   <- 0.05
+lfc_up_thr <- 0
+lfc_dn_thr <- 0
+
+# Column names
+p_col   <- "PAP1.vs.Control"       # raw p-value column
+lfc_col <- "diff.PAP1.vs.Control"  # log2FC column
+
+df <- diffEx_PAP1_vs_Control_CSF_KV1_3
+
+# Coerce to numeric (safe)
+df[[p_col]]   <- suppressWarnings(as.numeric(df[[p_col]]))
+df[[lfc_col]] <- suppressWarnings(as.numeric(df[[lfc_col]]))
+
+# Label significance (use a single, consistent spelling)
+df$significance <- ifelse(!is.na(df[[p_col]]) & df[[p_col]] < p_thresh & df[[lfc_col]] > lfc_up_thr, "Upregulated",
+                   ifelse(!is.na(df[[p_col]]) & df[[p_col]] < p_thresh & df[[lfc_col]] < lfc_dn_thr, "Downregulated",
+                          "Not.significant"))
+
+# Helpers
+df$minusLog10P <- -log10(df[[p_col]])
+df$log2FC      <- df[[lfc_col]]
+
+# Quick check
+print(table(df$significance))
+
+
+## GO plot
+# Gene lists for GO
+up_genes   <- df$Protein[df$significance == "Upregulated"]
+down_genes <- df$Protein[df$significance == "Downregulated"]
+
+# Background universe (vector of symbols)
+Background <- unique(row.names(normalized_data))
+
+# Save volcano-ready table
+write.csv(df, file = "diffEx_PAP1.vs.Control.Volcano.csv")
+
+## ---- UP-only GO Enrichment (BP/MF/CC) ----
+ego_up_BP <- enrichGO(gene = up_genes, universe = Background,
+                      OrgDb = org.Mm.eg.db, keyType = "SYMBOL", ont = "BP",
+                      pAdjustMethod = "BH", qvalueCutoff = 1, readable = TRUE)
+ego_up_BP_df <- as.data.frame(ego_up_BP@result); ego_up_BP_df$ONTOLOGY <- "BP"
+
+ego_up_MF <- enrichGO(gene = up_genes, universe = Background,
+                      OrgDb = org.Mm.eg.db, keyType = "SYMBOL", ont = "MF",
+                      pAdjustMethod = "BH", qvalueCutoff = 1, readable = TRUE)
+ego_up_MF_df <- as.data.frame(ego_up_MF@result); ego_up_MF_df$ONTOLOGY <- "MF"
+
+ego_up_CC <- enrichGO(gene = up_genes, universe = Background,
+                      OrgDb = org.Mm.eg.db, keyType = "SYMBOL", ont = "CC",
+                      pAdjustMethod = "BH", qvalueCutoff = 1, readable = TRUE)
+ego_up_CC_df <- as.data.frame(ego_up_CC@result); ego_up_CC_df$ONTOLOGY <- "CC"
+
+## ---- Functions (older dplyr–safe) ----
+add_minuslog10 <- function(d) {
+  if (is.null(d) || nrow(d) == 0) return(d)
+  d$pvalue <- suppressWarnings(as.numeric(d$pvalue))
+  d$minusLog10P <- -log10(d$pvalue)
+  d
+}
+
+slice_top12 <- function(d) {
+  if (is.null(d) || nrow(d) == 0) return(d)
+  d$p.adjust <- suppressWarnings(as.numeric(d$p.adjust))
+  d <- d[order(d$p.adjust, na.last = NA), , drop = FALSE]
+  if (nrow(d) > 12) d <- d[1:12, , drop = FALSE]
+  d
+}
+
+plot_go_top12 <- function(d, title_text, low_col, high_col, limit_max = 5) {
+  if (is.null(d) || nrow(d) == 0) { message("No rows to plot for: ", title_text); return(invisible(NULL)) }
+  ggplot(d, aes(x = reorder(Description, minusLog10P), y = minusLog10P, fill = minusLog10P)) +
+    geom_bar(stat = "identity", width = 0.75) +
+    coord_flip() +
+    scale_fill_gradient(low = low_col, high = high_col,
+                        limits = c(0, limit_max), oob = squish) +
+    labs(title = title_text, x = "GO Term", y = "-log10(p-value)", fill = "-log10(p-value)") +
+    theme_minimal(base_size = 12) +
+    theme(axis.text.y = element_text(size = 10))
+}
+
+## ---- Top-12 + Plots (UP) ----
+ego_up_BP_df <- add_minuslog10(ego_up_BP_df)
+ego_up_CC_df <- add_minuslog10(ego_up_CC_df)
+ego_up_MF_df <- add_minuslog10(ego_up_MF_df)
+
+top12_UP_BP <- slice_top12(ego_up_BP_df)
+top12_UP_CC <- slice_top12(ego_up_CC_df)
+top12_UP_MF <- slice_top12(ego_up_MF_df)
+
+####
+library(ggplot2)
+library(scales)   # for squish
+
+# safer plotting helper
+plot_go_top12 <- function(d, title_text, low_col = "orange", high_col = "orange4", limit_max = 5) {
+  if (is.null(d) || nrow(d) == 0) {
+    message("No rows to plot for: ", title_text); 
+    return(invisible(NULL))
+  }
+  low_col  <- as.character(low_col)
+  high_col <- as.character(high_col)
+
+  ggplot(d, aes(x = reorder(Description, minusLog10P), y = minusLog10P, fill = minusLog10P)) +
+    geom_bar(stat = "identity", width = 0.75) +
+    coord_flip() +
+    scale_fill_gradient(low = low_col, high = high_col,
+                        limits = c(0, limit_max), oob = scales::squish) +
+    labs(title = title_text, x = "GO Term", y = "-log10(p-value)", fill = "-log10(p-value)") +
+    theme_minimal(base_size = 12) +
+    theme(axis.text.y = element_text(size = 14))
+}
+
+
+P1 <- plot_go_top12(top12_UP_BP, "GO.BP:UP.PAP1.vs.Control", "orange",  "orange4", 5)
+P2 <- plot_go_top12(top12_UP_CC, "GO.CC:UP.PAP1.vs.Control", "green4",  "darkgreen", 5)
+P3 <- plot_go_top12(top12_UP_MF, "GO.MF:UP.PAP1.vs.ControlGO:MF", "purple",  "purple4", 5)
+
+# View
+P1; P2; P3
+
+
+
+### Down regulated pathways in PAP1 vs. Control
+## ---- DOWN-only GO Enrichment (BP/MF/CC) ----
+# If not already defined:
+# down_genes <- df$Protein[df$significance == "Downregulated"]
+# Background <- unique(df$Protein[!is.na(df$Protein)])  # make sure these are SYMBOLs
+
+ego_dn_BP <- enrichGO(gene = down_genes, universe = Background,
+                      OrgDb = org.Mm.eg.db, keyType = "SYMBOL", ont = "BP",
+                      pAdjustMethod = "BH", qvalueCutoff = 1, readable = TRUE)
+ego_dn_BP_df <- as.data.frame(ego_dn_BP@result); ego_dn_BP_df$ONTOLOGY <- "BP"
+
+ego_dn_MF <- enrichGO(gene = down_genes, universe = Background,
+                      OrgDb = org.Mm.eg.db, keyType = "SYMBOL", ont = "MF",
+                      pAdjustMethod = "BH", qvalueCutoff = 1, readable = TRUE)
+ego_dn_MF_df <- as.data.frame(ego_dn_MF@result); ego_dn_MF_df$ONTOLOGY <- "MF"
+
+ego_dn_CC <- enrichGO(gene = down_genes, universe = Background,
+                      OrgDb = org.Mm.eg.db, keyType = "SYMBOL", ont = "CC",
+                      pAdjustMethod = "BH", qvalueCutoff = 1, readable = TRUE)
+ego_dn_CC_df <- as.data.frame(ego_dn_CC@result); ego_dn_CC_df$ONTOLOGY <- "CC"
+
+## ---- Top-12 + Plots (DOWN) ----
+ego_dn_BP_df <- add_minuslog10(ego_dn_BP_df)
+ego_dn_CC_df <- add_minuslog10(ego_dn_CC_df)
+ego_dn_MF_df <- add_minuslog10(ego_dn_MF_df)
+
+top12_DN_BP <- slice_top12(ego_dn_BP_df)
+top12_DN_CC <- slice_top12(ego_dn_CC_df)
+top12_DN_MF <- slice_top12(ego_dn_MF_df)
+
+D1 <- plot_go_top12(top12_DN_BP, "GO.BP:DOWN.PAP1.vs.Control",  "orange",  "orange4", 5)
+D2 <- plot_go_top12(top12_DN_CC, "GO.CC:DOWN.PAP1.vs.Control", "green4",  "darkgreen", 5)
+D3 <- plot_go_top12(top12_DN_MF, "GO.MF:DOWN.PAP1.vs.Control", "purple",  "purple4", 5)
+
+D1; D2; D3
+
+
+```
+
+
+
+```{r Correlation between Brain and CSF proteomics data for PAP1 vs. Control}
+CSF.KV1.3.cleanDat_PAP1.vs.Control <- readRDS("~/Desktop/KV1.3_CSF.PAP1.30july2025/CSF.KV1.3.Proteomics.Analysis/CSF.KV1.3.cleanDat_PAP1.vs.Control.rds")
+
+CSF.KV1.3.NumericMeta_PAP1.vs.Control <- readRDS("~/Desktop/KV1.3_CSF.PAP1.30july2025/CSF.KV1.3.Proteomics.Analysis/CSF.KV1.3.NumericMeta_PAP1.vs.Control.rds")
+
+meta_pap1_control.proteomics.brain <- readRDS("~/Downloads/meta_pap1_control.proteomics (1).rds")
+
+expr_pap1_control.proteomics.brain <- readRDS("~/Downloads/expr_pap1_control.proteomics.rds")
+
+## Correlation between Brain and CSF for PAP1
+
+## 1) Make clean numeric matrices
+CSF_mat   <- as.matrix(CSF.KV1.3.cleanDat_PAP1.vs.Control)
+Brain_mat <- as.matrix(expr_pap1_control.proteomics.brain)
+
+## 2) Fix brain rownames: keep SYMBOL before first underscore
+brain_symbols <- sub("_.*$", "", rownames(Brain_mat))
+
+## 3) Collapse duplicate symbols in brain by mean expression (base R)
+Brain_df <- as.data.frame(Brain_mat, check.names = FALSE)
+Brain_df$Symbol <- brain_symbols
+Brain_sym <- aggregate(. ~ Symbol, data = Brain_df, FUN = function(x) mean(as.numeric(x), na.rm = TRUE))
+rownames(Brain_sym) <- Brain_sym$Symbol
+Brain_sym$Symbol <- NULL
+Brain_sym <- as.matrix(Brain_sym)
+
+## 4) Find common proteins (symbols)
+common_proteins <- intersect(rownames(CSF_mat), rownames(Brain_sym))
+cat("Common proteins:", length(common_proteins), "\n")
+
+stopifnot(length(common_proteins) > 2)  # need >2 for cor.test
+
+## 5) Subset to common rows
+CSF_c   <- CSF_mat[common_proteins, , drop = FALSE]
+Brain_c <- Brain_sym[common_proteins, , drop = FALSE]
+
+## 6) Normalize group labels
+csf_group   <- toupper(CSF.KV1.3.NumericMeta_PAP1.vs.Control$Group)
+brain_group <- toupper(meta_pap1_control.proteomics.brain$Group)
+
+## 7) Average **expression** within PAP1 (no fold changes)
+csf_mean_pap1   <- rowMeans(CSF_c[, csf_group   == "PAP1", drop = FALSE], na.rm = TRUE)
+brain_mean_pap1 <- rowMeans(Brain_c[, brain_group == "PAP1", drop = FALSE], na.rm = TRUE)
+
+## 8) Build df, drop non-finite, correlate
+plot_df <- data.frame(
+  Protein    = common_proteins,
+  CSF_expr   = csf_mean_pap1[common_proteins],
+  Brain_expr = brain_mean_pap1[common_proteins],
+  row.names  = common_proteins
+)
+plot_df <- plot_df[is.finite(plot_df$CSF_expr) & is.finite(plot_df$Brain_expr), ]
+cat("Usable proteins after NA/Inf filter:", nrow(plot_df), "\n")
+stopifnot(nrow(plot_df) > 2)
+
+cor_result <- cor.test(plot_df$CSF_expr, plot_df$Brain_expr, method = "pearson")
+print(cor_result)
+
+## 9) Plot
+library(ggplot2)
+ggplot(plot_df, aes(x = CSF_expr, y = Brain_expr)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm") +
+  labs(
+    title = paste0("Brain vs CSF Expression (PAP1) — r = ",
+                   round(cor_result$estimate, 2),
+                   ", p = ", signif(cor_result$p.value, 3)),
+    x = "CSF expression (avg PAP1)",
+    y = "Brain expression (avg PAP1)"
+  ) +
+  theme_minimal()
+
+##Common proteins: 3380 
+
+## Correlation between Brain and CSF for PAP1
+
+### Correlation plot for Control
+## 7) Average **expression** within PAP1 (no fold changes)
+csf_mean_pap1   <- rowMeans(CSF_c[, csf_group   == "CONTROL", drop = FALSE], na.rm = TRUE)
+brain_mean_pap1 <- rowMeans(Brain_c[, brain_group == "PAP1", drop = FALSE], na.rm = TRUE)
+
+## 8) Build df, drop non-finite, correlate
+plot_df <- data.frame(
+  Protein    = common_proteins,
+  CSF_expr   = csf_mean_pap1[common_proteins],
+  Brain_expr = brain_mean_pap1[common_proteins],
+  row.names  = common_proteins
+)
+plot_df <- plot_df[is.finite(plot_df$CSF_expr) & is.finite(plot_df$Brain_expr), ]
+cat("Usable proteins after NA/Inf filter:", nrow(plot_df), "\n")
+stopifnot(nrow(plot_df) > 2)
+
+cor_result <- cor.test(plot_df$CSF_expr, plot_df$Brain_expr, method = "pearson")
+print(cor_result)
+
+## 9) Plot
+library(ggplot2)
+ggplot(plot_df, aes(x = CSF_expr, y = Brain_expr)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm") +
+  labs(
+    title = paste0("Brain vs CSF Expression (Control) — r = ",
+                   round(cor_result$estimate, 2),
+                   ", p = ", signif(cor_result$p.value, 3)),
+    x = "CSF expression (avg Control)",
+    y = "Brain expression (avg Control)"
+  ) +
+  theme_minimal()
+
+
+```
+

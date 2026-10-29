@@ -1,0 +1,1949 @@
+---
+title: "KV1.3.Proteomics.GO.part2"
+author: "Dr UPASNA"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r library}
+library(tidyverse)
+#library (readxl)
+library(writexl)
+library(ggrepel)
+library(gplots)
+library(randomForest)
+library(pROC)
+library(variancePartition)
+library(limma)
+library(BiocParallel)
+library(ComplexHeatmap)
+library(org.Hs.eg.db)
+library(clusterProfiler)
+library(pheatmap)
+library(EnhancedVolcano)
+library(tidyverse)
+library(dplyr)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(dplyr)
+library(preprocessCore)
+library(M3C)
+```
+
+
+
+```{r import DEPs for Pap1}
+#wd = "/Users/usri/Desktop/GO.Kv1.3.Proteomics"
+library(readr)
+ANOVA_diffEx_PAP1_VS_CONTROL <- read_csv("~/Desktop/Venn.snRNAseq.MICROGLIA.PAP1.SHK/GO.Bulk.Proteomics.KV1.3/ANOVA_diffEx-PAP1.VS.CONTROL.csv")
+
+table(ANOVA_diffEx_PAP1_VS_CONTROL$Significant)
+
+PAP1.VS.CONTROL.UP <- subset(ANOVA_diffEx_PAP1_VS_CONTROL, Significant=="UP")
+saveRDS(PAP1.VS.CONTROL.UP, file = 'PAP1.VS.CONTROL.UP.rds')
+
+PAP1.VS.CONTROL.DOWN <- subset(ANOVA_diffEx_PAP1_VS_CONTROL, Significant=="DOWN")
+saveRDS(PAP1.VS.CONTROL.DOWN, file = 'PAP1.VS.CONTROL.DOWN.rds')
+
+Background <- ANOVA_diffEx_PAP1_VS_CONTROL$Protein
+saveRDS(Background, file = 'KV1.3.Proteomics.Background.rds')
+```
+
+
+
+```{r GO for PAP1 vs. Control UP}
+# Step 2: Run GO enrichment using SYMBOLs directly
+library(org.Mm.eg.db)
+GO <- enrichGO(
+    gene = PAP1.VS.CONTROL.UP$Protein,
+    universe = Background,
+    OrgDb = org.Mm.eg.db,
+    keyType = "SYMBOL",       # <- SYMBOL not Symbol
+    ont = "ALL",              # BP, MF, CC
+    #pAdjustMethod = "BH",
+    #qvalueCutoff = 1,         # No filtering yet
+    readable = FALSE          # Already using SYMBOLs, so no need to convert
+)
+
+# Step 3: Check if SYMBOLs are in the result
+head(GO@result[, c("ID", "Description", "p.adjust", "geneID")], 5)
+# Step 3: Add z-score calculation function
+add_zscore <- function(go_data, label) {
+    go_data@result %>%
+        filter(p.adjust < 0.05) %>%
+        mutate(
+            Group = label,
+            Observed = as.numeric(sub("/.*", "", GeneRatio)),
+            GeneTotal = as.numeric(sub(".*/", "", GeneRatio)),
+            BgTotal = as.numeric(sub(".*/", "", BgRatio)),
+            BgObserved = as.numeric(sub("/.*", "", BgRatio)),
+            zscore = (Observed / GeneTotal - BgObserved / BgTotal) / sqrt(Count)
+        )
+}
+
+GO.df <- add_zscore(GO, "UP.PAP1.vs.Control")
+
+# Step 4: Add -log10(p.adjust)
+GO.df$neg.log10.Padjust <- -log10(GO.df$p.adjust)
+
+#write.csv(GO.df, file = 'GO.df.UP.PAP1.vs.Control.csv')
+
+# Step 5: Extract top 15 GO terms by significance
+top_go_up <- GO.df %>%
+    arrange(desc(neg.log10.Padjust)) %>%
+    slice_head(n = 15)
+
+# Prepare data for plotting
+top_go_up$Description <- factor(top_go_up$Description, levels = top_go_up$Description[order(top_go_up$Count)])
+
+# Step 6: Plot
+ggplot(top_go_up, aes(x = Count, y = Description, fill = neg.log10.Padjust)) +
+    geom_bar(stat = "identity", color = "black") +
+    scale_fill_gradient(low = "red", high = "brown", name = "-log10(p.adjust)") +
+    labs(
+        title = "GO: UP.PAP1 vs Control",
+        x = "Gene Count",
+        y = "GO Term"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y      = element_text(size = 16),
+        axis.text.x      = element_text(size = 16),
+        plot.title       = element_text(size = 14, face = "bold")
+    )
+```
+
+
+
+```{r GO for PAP1 vs. Control DOWN}
+# Step 2: Run GO enrichment using SYMBOLs directly
+library(org.Mm.eg.db)
+GO <- enrichGO(
+    gene = PAP1.VS.CONTROL.DOWN$Protein,
+    universe = Background,
+    OrgDb = org.Mm.eg.db,
+    keyType = "SYMBOL",       # <- SYMBOL not Symbol
+    ont = "ALL",              # BP, MF, CC
+    pAdjustMethod = "BH",
+    qvalueCutoff = 1,         # No filtering yet
+    readable = FALSE          # Already using SYMBOLs, so no need to convert
+)
+
+# Step 3: Check if SYMBOLs are in the result
+head(GO@result[, c("ID", "Description", "p.adjust", "geneID")], 5)
+# Step 3: Add z-score calculation function
+add_zscore <- function(go_data, label) {
+    go_data@result %>%
+        filter(p.adjust < 0.05) %>%
+        mutate(
+            Group = label,
+            Observed = as.numeric(sub("/.*", "", GeneRatio)),
+            GeneTotal = as.numeric(sub(".*/", "", GeneRatio)),
+            BgTotal = as.numeric(sub(".*/", "", BgRatio)),
+            BgObserved = as.numeric(sub("/.*", "", BgRatio)),
+            zscore = (Observed / GeneTotal - BgObserved / BgTotal) / sqrt(Count)
+        )
+}
+
+GO.df <- add_zscore(GO, "DOWN.PAP1.vs.Control")
+
+# Step 4: Add -log10(p.adjust)
+GO.df$neg.log10.Padjust <- -log10(GO.df$p.adjust)
+
+# Step 5: Extract top 15 GO terms by significance
+top_go_up <- GO.df %>%
+    arrange(desc(neg.log10.Padjust)) %>%
+    slice_head(n = 15)
+
+# Prepare data for plotting
+top_go_up$Description <- factor(top_go_up$Description, levels = top_go_up$Description[order(top_go_up$Count)])
+
+# Step 6: Plot
+ggplot(top_go_up, aes(x = Count, y = Description, fill = neg.log10.Padjust)) +
+    geom_bar(stat = "identity", color = "black") +
+    scale_fill_gradient(low = "blue", high = "navy", name = "-log10(p.adjust)") +
+    labs(
+        title = "GO: DOWN.PAP1 vs Control",
+        x = "Gene Count",
+        y = "GO Term"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y      = element_text(size = 16),
+        axis.text.x      = element_text(size = 16),
+        plot.title       = element_text(size = 14, face = "bold")
+    )
+#write.csv(GO.df, file = 'GO.DOWN.Pap1.vs.Control.csv')
+#write.csv(top_go_up, file = 'Top.GO.DOWN.Pap1.vs.Control.csv')
+```
+
+
+```{r import DEPs for ShK}
+library(readr)
+ANOVA_diffEx_ShK_vs_PBS <- read_csv("~/Desktop/Venn.snRNAseq.MICROGLIA.PAP1.SHK/ANOVA_diffEx.ShK.vs.PBS.csv")
+table(ANOVA_diffEx_ShK_vs_PBS$Significant)
+
+ShK.vs.PBS.UP <-  subset(ANOVA_diffEx_ShK_vs_PBS, Significant=="UP")
+
+saveRDS(ShK.vs.PBS.UP, file = 'ShK.vs.PBS.UP.rds')
+
+ShK.vs.PBS.DOWN <-  subset(ANOVA_diffEx_ShK_vs_PBS, Significant=="DOWN")
+
+saveRDS(ShK.vs.PBS.DOWN, file = 'ShK.vs.PBS.DOWN.rds')
+```
+
+
+
+```{r GO for Shk vs. PBS UP}
+# Step 2: Run GO enrichment using SYMBOLs directly
+library(org.Mm.eg.db)
+GO <- enrichGO(
+    gene = ShK.vs.PBS.UP$Protein,
+    universe = Background,
+    OrgDb = org.Mm.eg.db,
+    keyType = "SYMBOL",       # <- SYMBOL not Symbol
+    ont = "ALL",              # BP, MF, CC
+    pAdjustMethod = "BH",
+    qvalueCutoff = 1,         # No filtering yet
+    readable = FALSE          # Already using SYMBOLs, so no need to convert
+)
+
+# Step 3: Check if SYMBOLs are in the result
+head(GO@result[, c("ID", "Description", "p.adjust", "geneID")], 5)
+# Step 3: Add z-score calculation function
+add_zscore <- function(go_data, label) {
+    go_data@result %>%
+        filter(p.adjust < 0.05) %>%
+        mutate(
+            Group = label,
+            Observed = as.numeric(sub("/.*", "", GeneRatio)),
+            GeneTotal = as.numeric(sub(".*/", "", GeneRatio)),
+            BgTotal = as.numeric(sub(".*/", "", BgRatio)),
+            BgObserved = as.numeric(sub("/.*", "", BgRatio)),
+            zscore = (Observed / GeneTotal - BgObserved / BgTotal) / sqrt(Count)
+        )
+}
+
+GO.df <- add_zscore(GO, "UP.ShK.vs.PBS")
+
+# Step 4: Add -log10(p.adjust)
+GO.df$neg.log10.Padjust <- -log10(GO.df$p.adjust)
+
+# Step 5: Extract top 15 GO terms by significance
+top_go_up <- GO.df %>%
+    arrange(desc(neg.log10.Padjust)) %>%
+    slice_head(n = 30)
+
+# Prepare data for plotting
+top_go_up$Description <- factor(top_go_up$Description, levels = top_go_up$Description[order(top_go_up$Count)])
+
+# Step 6: Plot
+ggplot(top_go_up, aes(x = Count, y = Description, fill = neg.log10.Padjust)) +
+    geom_bar(stat = "identity", color = "black") +
+    scale_fill_gradient(low = "red", high = "brown", name = "-log10(p.adjust)") +
+    labs(
+        title = "GO:UP.ShK.vs.PBS",
+        x = "Gene Count",
+        y = "GO Term"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y      = element_text(size = 16),
+        axis.text.x      = element_text(size = 16),
+        plot.title       = element_text(size = 14, face = "bold")
+    )
+
+#write.csv(GO.df, file = 'GO.UP.ShK.vs.PBS.csv')
+#write.csv(top_go_up, file = 'Top.GO.UP.ShK.vs.PBS.csv')
+```
+
+
+
+```{r GO for Shk vs. PBS DOWN}
+# Step 2: Run GO enrichment using SYMBOLs directly
+library(org.Mm.eg.db)
+GO <- enrichGO(
+    gene = ShK.vs.PBS.DOWN$Protein,
+    universe = Background,
+    OrgDb = org.Mm.eg.db,
+    keyType = "SYMBOL",       # <- SYMBOL not Symbol
+    ont = "ALL",              # BP, MF, CC
+    pAdjustMethod = "BH",
+    qvalueCutoff = 1,         # No filtering yet
+    readable = FALSE          # Already using SYMBOLs, so no need to convert
+)
+
+# Step 3: Check if SYMBOLs are in the result
+head(GO@result[, c("ID", "Description", "p.adjust", "geneID")], 5)
+# Step 3: Add z-score calculation function
+add_zscore <- function(go_data, label) {
+    go_data@result %>%
+        filter(p.adjust < 0.05) %>%
+        mutate(
+            Group = label,
+            Observed = as.numeric(sub("/.*", "", GeneRatio)),
+            GeneTotal = as.numeric(sub(".*/", "", GeneRatio)),
+            BgTotal = as.numeric(sub(".*/", "", BgRatio)),
+            BgObserved = as.numeric(sub("/.*", "", BgRatio)),
+            zscore = (Observed / GeneTotal - BgObserved / BgTotal) / sqrt(Count)
+        )
+}
+
+GO.df <- add_zscore(GO, "DOWN.ShK.vs.PBS")
+# Step 4: Add -log10(p.adjust)
+GO.df$neg.log10.Padjust <- -log10(GO.df$p.adjust)
+
+# Step 5: Extract top 15 GO terms by significance
+top_go_up <- GO.df %>%
+    arrange(desc(neg.log10.Padjust)) %>%
+    slice_head(n = 15)
+
+# Prepare data for plotting
+top_go_up$Description <- factor(top_go_up$Description, levels = top_go_up$Description[order(top_go_up$Count)])
+
+# Step 6: Plot
+ggplot(top_go_up, aes(x = Count, y = Description, fill = neg.log10.Padjust)) +
+    geom_bar(stat = "identity", color = "black") +
+    scale_fill_gradient(low = "blue", high = "navy", name = "-log10(p.adjust)") +
+    labs(
+        title = "GO:DOWN.ShK.vs.PBS",
+        x = "Gene Count",
+        y = "GO Term"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.y      = element_text(size = 16),
+        axis.text.x      = element_text(size = 16),
+        plot.title       = element_text(size = 14, face = "bold")
+    )
+#write.csv(GO.df, file = 'GO.DOWN.ShK.vs.PBS.csv')
+#write.csv(top_go_up, file = 'Top.GO.DOWN.ShK.vs.PBS.csv')
+```
+
+
+
+```{r 4 way venn diagram based on Protein}
+#ShK.vs.PBS.DOWN$Protein
+#ShK.vs.PBS.UP$Protein
+#PAP1.VS.CONTROL.DOWN$Protein
+#PAP1.VS.CONTROL.UP$Protein
+# Load package
+library(VennDiagram)
+library(ggvenn)
+
+# Clean and prepare data
+gene_sets <- list(
+  Pap1.Up   = na.omit(PAP1.VS.CONTROL.UP$Protein),
+  Pap1.Down = na.omit(PAP1.VS.CONTROL.DOWN$Protein),
+  ShK_UP    = na.omit(ShK.vs.PBS.UP$Protein),
+  ShK.Down  = na.omit(ShK.vs.PBS.DOWN$Protein))
+
+# Plot
+ggvenn(gene_sets, fill_color = c("red", "green", "blue", "yellow"))
+
+```
+
+
+
+```{r 4 way venn diagram based on id}
+#ShK.vs.PBS.DOWN$Protein
+#ShK.vs.PBS.UP$Protein
+#PAP1.VS.CONTROL.DOWN$Protein
+#PAP1.VS.CONTROL.UP$Protein
+# Load package
+library(VennDiagram)
+library(ggvenn)
+
+# Clean and prepare data
+gene_sets <- list(
+  Pap1.Up   = na.omit(PAP1.VS.CONTROL.UP$ID),
+  Pap1.Down = na.omit(PAP1.VS.CONTROL.DOWN$ID),
+  ShK_UP    = na.omit(ShK.vs.PBS.UP$ID),
+  ShK.Down  = na.omit(ShK.vs.PBS.DOWN$ID))
+
+# Plot
+ggvenn(gene_sets, fill_color = c("red", "green", "blue", "yellow"))
+
+```
+
+
+
+```{r venn}
+# Install if needed
+
+library(eulerr)
+
+# Clean input sets (remove NAs)
+#set1 <- unique(na.omit(ShK.vs.PBS.DOWN$Protein))
+#set2 <- unique(na.omit(ShK.vs.PBS.UP$Protein))
+#set3 <- unique(na.omit(PAP1.VS.CONTROL.DOWN$Protein))
+#set4 <- unique(na.omit(PAP1.VS.CONTROL.UP$Protein))
+
+
+# Clean input sets (remove NAs)
+set1 <- unique(na.omit(ShK.vs.PBS.DOWN$Protein))
+set2 <- unique(na.omit(ShK.vs.PBS.UP$Protein))
+set3 <- unique(na.omit(PAP1.VS.CONTROL.DOWN$Protein))
+set4 <- unique(na.omit(PAP1.VS.CONTROL.UP$Protein))
+
+
+# Create named list of sets
+gene_sets <- list(
+  ShK_DOWN  = set1,
+  ShK_UP    = set2,
+  PAP1_DOWN = set3,
+  PAP1_UP   = set4
+)
+
+# Create presence-absence matrix
+all_genes <- unique(unlist(gene_sets))
+
+presence_matrix <- data.frame(
+  Gene = all_genes,
+  ShK_DOWN  = all_genes %in% set1,
+  ShK_UP    = all_genes %in% set2,
+  PAP1_DOWN = all_genes %in% set3,
+  PAP1_UP   = all_genes %in% set4
+)
+
+# View or export the full overlap matrix
+head(presence_matrix)
+write.csv(presence_matrix, "4way_venn_overlap_table.csv", row.names = FALSE)
+
+```
+
+
+```{r PAP1.Resilience.venn for for Bulk RNAseq data}
+library(VennDiagram)
+library(readr)  # Ensure read_csv is available
+
+# Read the data
+VENN_JAN28 <- read_csv("~/Desktop/SnRNAseq.manuscript.Plots.April10/PAP1.vs.Control.plots/VENN.JAN28.csv")
+# Define the input sets
+venn.list <- list(
+  PAP1.UP = head(VENN_JAN28$PAP1.UP, 212),
+  PAP1.DOWN = head(VENN_JAN28$PAP1.DOWN, 175),
+  Pro.Resilience = head(VENN_JAN28$Pro.Resilience.Mouse, 299),
+  Anti.Resilience = head(VENN_JAN28$`Anti-Resilience.Mouse`, 216)
+)
+
+# Create the Venn diagram
+venn.plot <- venn.diagram(
+  x = venn.list,
+  category.names = c("PAP1.UP", "PAP1.DOWN", "Pro.Resilience", "Anti-Resilience"),
+  fill = c("skyblue", "lightgoldenrod1", "orchid", "salmon"),
+  alpha = 0.5,
+  cex = 2.5,
+  cat.cex = 1.5,
+  cat.col = c("blue4", "darkorange3", "purple4", "red3"),
+  filename = NULL  # Direct plotting
+)
+
+# Render the diagram
+grid::grid.draw(venn.plot)
+```
+
+
+
+
+```{r PAP1_Interferon_venn PAP1.Resilience.venn for Bulk RNAseq data}
+library(readr)
+PAP1_Interferon_venn <- read_csv("~/Desktop/SnRNAseq.manuscript.Plots.April10/PAP1.vs.Control.plots/PAP1.Interferon.venn.csv")
+# Define the input sets
+venn.list <- list(
+  PAP1.UP = head(PAP1_Interferon_venn$PAP1.UP, 212 ),
+  PAP1.DOWN = head(PAP1_Interferon_venn$PAP1.DOWN, 175),
+IFN1 = head(PAP1_Interferon_venn$IFN1.UP.825, 825),
+IFN2 = head(PAP1_Interferon_venn$IFN2.UP.913, 913)
+)
+
+# Create the Venn diagram
+venn.plot <- venn.diagram(
+  x = venn.list,
+  category.names = c("PAP1.UP", "PAP1.DOWN", "IFN1", "IFN2"),
+  fill = c("skyblue", "lightgoldenrod1", "orchid", "salmon"),
+  alpha = 0.5,
+  cex = 2.5,
+  cat.cex = 1.5,
+  cat.col = c("blue4", "darkgreen", "purple4", "red3"),
+  filename = NULL  # Direct plotting
+)
+
+# Render the diagram
+grid::grid.draw(venn.plot)
+
+```
+
+
+
+
+```{r PAP1 Shk Resilience study}
+library(readr)
+library(gridExtra)
+library(DESeq2)
+library(pheatmap)
+library(tidyverse)
+library(WGCNA)
+library(writexl)
+Pro.resilience.Mito.62.June.2025 <- readRDS("~/Desktop/GO.Kv1.3.Proteomics/Pro.resilience.Mito.62.June.2025.rds")
+Pro.resilience.Mito.62.June.2025
+Synaptic.Proresilience.June.2025 <- readRDS("~/Desktop/GO.Kv1.3.Proteomics/Synaptic.Proresilience.June.2025.rds")
+Synaptic.Proresilience.June.2025
+ribosomal.Pro.resilience.June.2025 <- readRDS("~/Desktop/GO.Kv1.3.Proteomics/ribosomal.Pro.resilience.June.2025.rds")
+ribosomal.Pro.resilience.June.2025
+# Store them in a list
+gene_lists <- list(mitochondrial.Pro.resilience = Pro.resilience.Mito.62.June.2025, synaptic.Pro.resilience = Synaptic.Proresilience.June.2025, ribosomes.Pro.resilience = ribosomal.Pro.resilience.June.2025)
+# Print the lists
+print(gene_lists)
+
+##
+
+KV1.3.BULK.BRAIN.PRoteomics.normalized <- readRDS("~/Desktop/Ali.CSF.VPA.04.2025/KV1.3.BULK.BRAIN.PRoteomics.normalized.rds")
+KV1_3_Bulk_Brain_Priteomics_Metadata <- readRDS("~/Desktop/Ali.CSF.VPA.04.2025/KV1_3_Bulk_Brain_Priteomics_Metadata.rds")
+dim(KV1.3.BULK.BRAIN.PRoteomics.normalized)
+KV1_3_Bulk_Brain_Priteomics_Metadata
+rownames(KV1_3_Bulk_Brain_Priteomics_Metadata) <- colnames(KV1.3.BULK.BRAIN.PRoteomics.normalized)
+colnames(KV1.3.BULK.BRAIN.PRoteomics.normalized)==rownames(KV1_3_Bulk_Brain_Priteomics_Metadata)
+
+###Subset Count matrix for Mito,Synapto and Ribo
+# Extract expression data for each gene set (filter by rownames matching your gene set vectors)
+#mito_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[rownames(KV1.3.BULK.BRAIN.PRoteomics.normalized) %in% Pro.resilience.Mito.62.June.2025, ]
+# Extract gene symbols from rownames (strip off everything after "_")
+gene_symbols <- sub("_.*", "", rownames(KV1.3.BULK.BRAIN.PRoteomics.normalized))
+
+# Filter using gene symbols for each category
+mito_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[gene_symbols %in% Pro.resilience.Mito.62.June.2025, ]
+synaptic_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[gene_symbols %in% Synaptic.Proresilience.June.2025, ]
+ribosomal_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[gene_symbols %in% ribosomal.Pro.resilience.June.2025, ]
+#mito_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[rownames(KV1.3.BULK.BRAIN.PRoteomics.normalized) %in% Pro.resilience.Mito.62.June.2025, ]
+#synaptic_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[rownames(KV1.3.BULK.BRAIN.PRoteomics.normalized) %in% Synaptic.Proresilience.June.2025, ]
+#ribosomal_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[rownames(KV1.3.BULK.BRAIN.PRoteomics.normalized) %in% ribosomal.Pro.resilience.June.2025, ]
+
+
+rownames(mito_counts) <- gene_symbols[gene_symbols %in% Pro.resilience.Mito.62.June.2025]
+rownames(synaptic_counts) <- gene_symbols[gene_symbols %in% Synaptic.Proresilience.June.2025]
+rownames(ribosomal_counts) <- gene_symbols[gene_symbols %in% ribosomal.Pro.resilience.June.2025]
+
+dim(mito_counts)
+dim(synaptic_counts)
+dim(ribosomal_counts)
+
+#save files
+write.csv(mito_counts, file = 'mito_counts.KV1.3.Proteomics.cleanDat.csv')
+write.csv(synaptic_counts, file = 'synaptic_counts.KV1.3.Proteomics.cleanDat.csv')
+write.csv(ribosomal_counts, file = 'ribosomal_counts.KV1.3.Proteomics.cleanDat.csv')
+
+
+mitochondrial.Pro.resilience <- Pro.resilience.Mito.62.June.2025
+synaptic.Pro.resilience <- Synaptic.Proresilience.June.2025
+ribosomes.Pro.resilience <- ribosomal.Pro.resilience.June.2025
+
+
+#WGCNA 
+library(writexl)
+library(WGCNA)
+# Ensure WGCNA settings
+options(stringsAsFactors = FALSE)
+allowWGCNAThreads()  # Enables parallel computation for WGCNA
+# Function to compute Module Eigengenes (MEs)
+compute_MEs <- function(count_data) {
+  if (!exists("count_data") || nrow(count_data) == 0) {
+    stop("Error: count_data is empty or not found. Check gene filtering!")
+  }
+  
+  # Remove rows with any NA values
+  count_data <- count_data[complete.cases(count_data), ]
+  
+  if (nrow(count_data) == 0) {
+    stop("Error: All genes were removed after NA filtering. Check data!")
+  }
+  
+  # Transpose so genes are columns, samples are rows
+  datExpr <- t(count_data)
+  datExpr <- as.data.frame(datExpr)
+  
+  # Ensure minimum variance for module calculation
+  if (ncol(datExpr) < 2) {
+    stop("Error: Too few genes to compute eigengenes. Check input!")
+  }
+
+  # Assign all genes to a single module
+  module_colors <- rep("Module1", ncol(datExpr))
+
+  # Compute Module Eigengenes
+  MEs <- tryCatch({
+    moduleEigengenes(datExpr, colors = module_colors)$eigengenes
+  }, error = function(e) {
+    stop("Error in computing Module Eigengenes: ", e$message)
+  })
+  
+  return(list(MEs = MEs, datExpr = datExpr))  # Return both MEs and transformed data
+}
+
+# Ensure input data exists
+if (!exists("mito_counts") || !exists("synaptic_counts") || !exists("ribosomal_counts")) {
+  stop("Error: One or more count datasets (mito_counts, synaptic_counts, ribosomal_counts) are missing!")
+}
+
+if (!exists("mitochondrial.Pro.resilience") || !exists("synaptic.Pro.resilience") || !exists("ribosomes.Pro.resilience")) {
+  stop("Error: One or more gene lists (mitochondrial.Pro.resilience, synaptic.Pro.resilience, ribosomes.Pro.resilience) are missing!")
+}
+
+# Compute MEs for each gene set (store transformed expression data too)
+MEs_mito <- compute_MEs(mito_counts[rownames(mito_counts) %in% mitochondrial.Pro.resilience, , drop = FALSE])
+MEs_synaptic <- compute_MEs(synaptic_counts[rownames(synaptic_counts) %in% synaptic.Pro.resilience, ,drop = FALSE])
+MEs_ribosomal <- compute_MEs(ribosomal_counts[rownames(ribosomal_counts) %in% ribosomes.Pro.resilience ,  ,drop = FALSE])
+
+# Verify output
+print("Eigengene matrices computed successfully!")
+
+# Function to compute kME values
+compute_kME <- function(datExpr, MEs) {
+  if (nrow(datExpr) == 0) {
+    stop("Error: datExpr is empty. Check gene filtering!")
+  }
+  if (nrow(MEs$MEs) == 0) {
+    stop("Error: MEs are empty. Eigengene computation may have failed.")
+  }
+
+  # Ensure column names match
+  colnames(MEs$MEs) <- paste0("ME", colnames(MEs$MEs))
+  
+  kMEdat <- tryCatch({
+    signedKME(datExpr, MEs$MEs, outputColumnName = "kME_")
+  }, error = function(e) {
+    stop("Error in computing kME: ", e$message)
+  })
+  
+  return(kMEdat)
+}
+
+# Compute kME for each gene set
+kME_mito <- compute_kME(MEs_mito$datExpr, MEs_mito)
+kME_synaptic <- compute_kME(MEs_synaptic$datExpr, MEs_synaptic)
+kME_ribosomal <- compute_kME(MEs_ribosomal$datExpr, MEs_ribosomal)
+
+# Save kME tables to Excel
+output_file <- "KV1.3.Proteomics.Resilience.xlsx"
+write_xlsx(list(
+  Mitochondrial = as.data.frame(kME_mito),
+  Synaptic = as.data.frame(kME_synaptic),
+  Ribosomal = as.data.frame(kME_ribosomal)
+), output_file)
+
+print(paste("kME calculations completed and saved to:", output_file))
+
+# Preview results
+head(MEs_mito$MEs, 5)
+
+saveRDS(MEs_mito, file = 'MEs_mito.KV1.3.Proteomics.rds')
+
+head(MEs_synaptic$MEs, 5)
+saveRDS(MEs_synaptic, file = 'MEs_synaptic.KV1.3.Proteomics.rds')
+
+
+head(MEs_ribosomal$MEs, 5)
+saveRDS(MEs_ribosomal, file = 'MEs_ribosomal.KV1.3.Proteomics.rds')
+```
+
+```{r resilience boxplot based on MEs}
+# Assign metadata
+
+# Check dimensions of MEs and metadata to ensure correct matching
+if (!all(rownames(MEs_mito$MEs) %in% rownames(KV1_3_Bulk_Brain_Priteomics_Metadata))) {
+  stop("Error: Sample names in MEs do not match metadata. Check sample naming consistency!")
+}
+
+# Prepare data for each module separately
+MEs_mito_df <- data.frame(
+  Eigengene = MEs_mito$MEs$MEModule1,
+  Module = "KV1.3 Proteomics Mito Resilience",
+  Treatment = KV1_3_Bulk_Brain_Priteomics_Metadata$Group)
+
+MEs_synapse_df <- data.frame(
+  Eigengene = MEs_synaptic$MEs$MEModule1,
+  Module = "KV1.3 Proteomics Synaptic Resilience",
+  Treatment = KV1_3_Bulk_Brain_Priteomics_Metadata$Group)
+
+MEs_ribo_df <- data.frame(
+  Eigengene = MEs_ribosomal$MEs$MEModule1,
+  Module = "KV1.3 Proteomics Ribosomal Resilience",
+  Treatment = KV1_3_Bulk_Brain_Priteomics_Metadata$Group)
+
+
+MEs_mito_df
+
+MEs_synapse_df
+
+MEs_ribo_df 
+# Save each dataset separately
+write.csv(MEs_mito_df, file = "MEs_mitochondrial.KV1.3.Proteomics.csv", row.names = FALSE)
+write.csv(MEs_synapse_df, file = "MEs_synaptic.KV1.3.Proteomics.csv", row.names = FALSE)
+write.csv(MEs_ribo_df, file = "MEs_ribosomal.KV1.3.Proteomics.csv", row.names = FALSE)
+
+
+table(KV1_3_Bulk_Brain_Priteomics_Metadata$Group)
+#Define Color Palette for These Groups
+
+condition_colors <- c(
+  "Control" = "#1f78b4",
+  "Pap1" = "#33a02c",
+  "PBS" = "#6a3d9a",
+  "SHK" = "#e31a1c"
+)
+ 
+
+condition_colors <- c(
+  "Control" = "#1f78b4",
+  "Pap1" = "#33a02c",
+  "PBS" = "#6a3d9a",
+  "SHK" = "#e31a1c"
+)
+
+
+#Define Comparisons for t-test
+comparisons <- list(
+  c("Pap1", "Control"),
+  c("SHK", "PBS")
+)
+
+#Create Boxplot Function
+library(ggplot2)
+library(ggpubr)
+
+create_boxplot <- function(data, title) {
+  ggboxplot(data, x = "Treatment", y = "Eigengene", fill = "Treatment", 
+            palette = condition_colors) +
+    stat_compare_means(method = "anova", label.y = max(data$Eigengene, na.rm = TRUE) * 1.1) +
+    stat_compare_means(method = "t.test", label = "p.format", comparisons = comparisons) +
+    theme_minimal() +
+    labs(title = title, x = "Treatment", y = "Eigengene")
+}
+
+#Generate Boxplots for Each Module
+p_mito <- create_boxplot(MEs_mito_df, "Mitochondrial Resilience")
+p_synapse <- create_boxplot(MEs_synapse_df, "Synaptic Resilience")
+p_ribo <- create_boxplot(MEs_ribo_df, "Ribosomal Resilience")
+
+# View plots
+print(p_mito)
+print(p_synapse)
+print(p_ribo)
+
+```
+
+
+```{r modified boxplot resilience}
+#Boxplot Function With ANOVA + t-tests
+create_boxplot <- function(data, title) {
+  ymax <- max(data$Eigengene, na.rm = TRUE)
+  
+  ggboxplot(data, x = "Treatment", y = "Eigengene", fill = "Treatment", 
+            palette = group_colors) +
+    # ANOVA: overall comparison, displayed higher than pairwise
+    stat_compare_means(method = "anova", label.y = ymax * 1.2, size = 4.5) +
+    
+    # Pairwise t-tests
+    stat_compare_means(method = "t.test", label = "p.format", 
+                       comparisons = comparisons, size = 4) +
+    
+    theme_minimal() +
+    labs(title = title, x = "Treatment", y = "Eigengene") +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+      axis.text = element_text(size = 10),
+      axis.title = element_text(size = 12)
+    )
+}
+
+p_mito <- create_boxplot(MEs_mito_df, "Mitochondrial Resilience")
+p_synapse <- create_boxplot(MEs_synapse_df, "Synaptic Resilience")
+p_ribo <- create_boxplot(MEs_ribo_df, "Ribosomal Resilience")
+
+print(p_mito)
+print(p_synapse)
+print(p_ribo)
+
+```
+
+
+
+```{r Interferon MEs}
+VENN_JAN28 <- read_csv("~/Desktop/SnRNAseq.manuscript.Plots.April10/PAP1.vs.Control.plots/VENN.JAN28.csv")
+Interferon = head(VENN_JAN28$Interferon.OLD, 271)
+# Extract gene symbols from rownames (strip off everything after "_")
+gene_symbols <- sub("_.*", "", rownames(KV1.3.BULK.BRAIN.PRoteomics.normalized))
+# Filter using gene symbols for each category
+Interferon_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[gene_symbols %in% Interferon, ]
+dim(Interferon_counts)
+saveRDS(Interferon_counts, file = 'kv1.3.proteomics.Interferon_counts.rds')
+##KMEs interferon
+
+#WGCNA 
+library(writexl)
+library(WGCNA)
+# Ensure WGCNA settings
+options(stringsAsFactors = FALSE)
+allowWGCNAThreads()  # Enables parallel computation for WGCNA
+# Function to compute Module Eigengenes (MEs)
+compute_MEs <- function(count_data) {
+  if (!exists("count_data") || nrow(count_data) == 0) {
+    stop("Error: count_data is empty or not found. Check gene filtering!")
+  }
+  
+  # Remove rows with any NA values
+  count_data <- count_data[complete.cases(count_data), ]
+  
+  if (nrow(count_data) == 0) {
+    stop("Error: All genes were removed after NA filtering. Check data!")
+  }
+  
+  # Transpose so genes are columns, samples are rows
+  datExpr <- t(count_data)
+  datExpr <- as.data.frame(datExpr)
+  
+  # Ensure minimum variance for module calculation
+  if (ncol(datExpr) < 2) {
+    stop("Error: Too few genes to compute eigengenes. Check input!")
+  }
+
+  # Assign all genes to a single module
+  module_colors <- rep("Module1", ncol(datExpr))
+
+  # Compute Module Eigengenes
+  MEs <- tryCatch({
+    moduleEigengenes(datExpr, colors = module_colors)$eigengenes
+  }, error = function(e) {
+    stop("Error in computing Module Eigengenes: ", e$message)
+  })
+  
+  return(list(MEs = MEs, datExpr = datExpr))  # Return both MEs and transformed data
+}
+
+# Ensure input data exists
+if (!exists("mito_counts") || !exists("synaptic_counts") || !exists("ribosomal_counts")) {
+  stop("Error: One or more count datasets (mito_counts, synaptic_counts, ribosomal_counts) are missing!")
+}
+
+if (!exists("mitochondrial.Pro.resilience") || !exists("synaptic.Pro.resilience") || !exists("ribosomes.Pro.resilience")) {
+  stop("Error: One or more gene lists (mitochondrial.Pro.resilience, synaptic.Pro.resilience, ribosomes.Pro.resilience) are missing!")
+}
+
+
+
+# Function to compute kME values
+compute_kME <- function(datExpr, MEs) {
+  if (nrow(datExpr) == 0) {
+    stop("Error: datExpr is empty. Check gene filtering!")
+  }
+  if (nrow(MEs$MEs) == 0) {
+    stop("Error: MEs are empty. Eigengene computation may have failed.")
+  }
+
+  # Ensure column names match
+  colnames(MEs$MEs) <- paste0("ME", colnames(MEs$MEs))
+  
+  kMEdat <- tryCatch({
+    signedKME(datExpr, MEs$MEs, outputColumnName = "kME_")
+  }, error = function(e) {
+    stop("Error in computing kME: ", e$message)
+  })
+  
+  return(kMEdat)
+}
+
+# Compute kME for each gene set
+
+# Extract gene symbols from rownames
+gene_symbols_interferon <- sub("_.*", "", rownames(Interferon_counts))
+
+# Filter mito_counts based on gene symbols
+filtered.Interferon_counts <- Interferon_counts[gene_symbols_interferon %in% Interferon, , drop = FALSE]
+
+# Optional: set clean rownames
+rownames(filtered.Interferon_counts) <- gene_symbols_interferon[gene_symbols_interferon %in% Interferon]
+
+# Check dimensions to confirm it worked
+dim(filtered.Interferon_counts)
+
+# Now run compute_MEs
+MEs_INTERFERON <- compute_MEs(filtered.Interferon_counts)
+
+
+# Preview results
+head(MEs_INTERFERON$MEs, 5)
+
+saveRDS(MEs_INTERFERON, file = 'MEs_INTERFERON.KV1.3.Proteomics.rds')
+
+##BOX PLOT FOR INTERFERON BASED ON MEs
+#Define Color Palette for These Groups
+
+condition_colors <- c(
+  "Control" = "#1f78b4",
+  "Pap1" = "#33a02c",
+  "PBS" = "#6a3d9a",
+  "SHK" = "#e31a1c"
+)
+
+
+#Define Comparisons for t-test
+comparisons <- list(
+  c("Pap1", "Control"),
+  c("SHK", "PBS")
+)
+
+#Create Boxplot Function
+library(ggplot2)
+library(ggpubr)
+
+create_boxplot <- function(data, title) {
+  ggboxplot(data, x = "Treatment", y = "Eigengene", fill = "Treatment", 
+            palette = condition_colors) +
+    stat_compare_means(method = "anova", label.y = max(data$Eigengene, na.rm = TRUE) * 1.1) +
+    stat_compare_means(method = "wilcox.test", label = "p.format", comparisons = comparisons) +
+    theme_minimal() +
+    labs(title = title, x = "Treatment", y = "Eigengene")
+}
+
+# Prepare data for each module separately
+MEs_INTERFERON_df <- data.frame(
+  Eigengene = MEs_INTERFERON$MEs$MEModule1,
+  Module = "KV1.3 Proteomics Interferon",
+  Treatment = KV1_3_Bulk_Brain_Priteomics_Metadata$Group)
+
+write.csv(MEs_INTERFERON_df, file = 'MEs_INTERFERON_df.csv')
+
+#Generate Boxplots for Each Module
+p_interferon <- create_boxplot(MEs_INTERFERON_df, "Interferon")
+p_interferon
+```
+
+
+
+```{r Type1 and Type2 Interferon based MEs for bulk proteomics}
+library(readr)
+PAP1_Interferon_venn <- read_csv("~/Desktop/SnRNAseq.manuscript.Plots.April10/PAP1.vs.Control.plots/PAP1.Interferon.venn.csv")
+IFN1 = head(PAP1_Interferon_venn$IFN1.UP.825, 825)
+IFN2 = head(PAP1_Interferon_venn$IFN2.UP.913, 913)
+
+#prepareation of MEs
+# Extract gene symbols from rownames (strip off everything after "_")
+gene_symbols <- sub("_.*", "", rownames(KV1.3.BULK.BRAIN.PRoteomics.normalized))
+# Filter using gene symbols for each category
+IFN1_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[gene_symbols %in% IFN1, ]
+dim(IFN1_counts)
+
+saveRDS(IFN1_counts, file = 'kv1.3.proteomics.IFN1_counts.rds')
+
+##
+IFN2_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[gene_symbols %in% IFN2, ]
+dim(IFN2_counts)
+saveRDS(IFN2_counts, file = 'kv1.3.proteomics.IFN2_counts.rds')
+
+#WGCNA 
+library(writexl)
+library(WGCNA)
+# Ensure WGCNA settings
+options(stringsAsFactors = FALSE)
+allowWGCNAThreads()  # Enables parallel computation for WGCNA
+# Function to compute Module Eigengenes (MEs)
+compute_MEs <- function(count_data) {
+  if (!exists("count_data") || nrow(count_data) == 0) {
+    stop("Error: count_data is empty or not found. Check gene filtering!")
+  }
+  
+  # Remove rows with any NA values
+  count_data <- count_data[complete.cases(count_data), ]
+  
+  if (nrow(count_data) == 0) {
+    stop("Error: All genes were removed after NA filtering. Check data!")
+  }
+  
+  # Transpose so genes are columns, samples are rows
+  datExpr <- t(count_data)
+  datExpr <- as.data.frame(datExpr)
+  
+  # Ensure minimum variance for module calculation
+  if (ncol(datExpr) < 2) {
+    stop("Error: Too few genes to compute eigengenes. Check input!")
+  }
+
+  # Assign all genes to a single module
+  module_colors <- rep("Module1", ncol(datExpr))
+
+  # Compute Module Eigengenes
+  MEs <- tryCatch({
+    moduleEigengenes(datExpr, colors = module_colors)$eigengenes
+  }, error = function(e) {
+    stop("Error in computing Module Eigengenes: ", e$message)
+  })
+  
+  return(list(MEs = MEs, datExpr = datExpr))  # Return both MEs and transformed data
+}
+
+
+
+# Function to compute kME values
+compute_kME <- function(datExpr, MEs) {
+  if (nrow(datExpr) == 0) {
+    stop("Error: datExpr is empty. Check gene filtering!")
+  }
+  if (nrow(MEs$MEs) == 0) {
+    stop("Error: MEs are empty. Eigengene computation may have failed.")
+  }
+
+  # Ensure column names match
+  colnames(MEs$MEs) <- paste0("ME", colnames(MEs$MEs))
+  
+  kMEdat <- tryCatch({
+    signedKME(datExpr, MEs$MEs, outputColumnName = "kME_")
+  }, error = function(e) {
+    stop("Error in computing kME: ", e$message)
+  })
+  
+  return(kMEdat)
+}
+
+# Extract gene symbols from rownames
+gene_symbols_IFN1 <- sub("_.*", "", rownames(IFN1_counts))
+
+# Filter mito_counts based on gene symbols
+filtered.IFN1_counts <- IFN1_counts[gene_symbols_IFN1 %in% IFN1, , drop = FALSE]
+
+# Optional: set clean rownames
+rownames(filtered.IFN1_counts) <- gene_symbols_IFN1[gene_symbols_IFN1 %in% IFN1]
+
+# Check dimensions to confirm it worked
+dim(filtered.IFN1_counts)
+
+# Now run compute_MEs
+MEs_IFN1 <- compute_MEs(filtered.IFN1_counts)
+
+
+# Preview results
+head(MEs_IFN1$MEs, 5)
+
+saveRDS(MEs_IFN1, file = 'MEs_IFN1.KV1.3.Proteomics.rds')
+
+#Define Color Palette for These Groups
+
+condition_colors <- c(
+  "Control" = "#1f78b4",
+  "Pap1" = "#33a02c",
+  "PBS" = "#6a3d9a",
+  "SHK" = "#e31a1c"
+)
+
+
+#Define Comparisons for t-test
+comparisons <- list(
+  c("Pap1", "Control"),
+  c("SHK", "PBS")
+)
+
+#Create Boxplot Function
+library(ggplot2)
+library(ggpubr)
+
+create_boxplot <- function(data, title, comparisons) {
+  ggboxplot(data, x = "Treatment", y = "Eigengene", fill = "Treatment", 
+            palette = condition_colors) +
+    stat_compare_means(method = "t.test", label = "p.format", comparisons = comparisons) +
+    theme_minimal() +
+    labs(title = title, x = "Treatment", y = "Eigengene")
+}
+
+
+MEs_IFN1_df <- data.frame(
+  Eigengene = MEs_IFN1$MEs$MEModule1,
+  Module = "KV1.3 Proteomics IFN1",
+  Treatment = KV1_3_Bulk_Brain_Priteomics_Metadata$Group  # corrected name
+)
+
+
+write.csv(MEs_IFN1_df , file = 'MEs_IFN1_df.csv')
+
+#Define comparisons:
+# Individual comparisons
+comp_pap1_control <- list(c("Pap1", "Control"))
+comp_shk_pbs <- list(c("SHK", "PBS"))
+
+#Subset and plot separately:
+# Pap1 vs Control
+df_IFN1_pap1_control <- subset(MEs_IFN1_df, Treatment %in% c("Pap1", "Control"))
+p_IFN1_pap1_control <- create_boxplot(df_IFN1_pap1_control, "IFN1: Pap1 vs Control", comp_pap1_control)
+
+# SHK vs PBS
+df_IFN1_shk_pbs <- subset(MEs_IFN1_df, Treatment %in% c("SHK", "PBS"))
+p_IFN1_shk_pbs <- create_boxplot(df_IFN1_shk_pbs, "IFN1: SHK vs PBS", comp_shk_pbs)
+
+#Show both plots
+ggarrange(p_IFN1_pap1_control, p_IFN1_shk_pbs, ncol = 2, labels = c("A", "B"))
+
+
+#Generate Boxplots for Each Module
+#p_IFN1 <- create_boxplot(MEs_IFN1_df, "IFN1")
+
+
+#Analyze IFN2
+# ----- STEP 1: Prepare IFN2 Counts -----
+# Clean gene symbols
+gene_symbols_IFN2 <- sub("_.*", "", rownames(IFN2_counts))
+
+# Filter rows by gene symbol
+filtered_IFN2_counts <- IFN2_counts[gene_symbols_IFN2 %in% IFN2, , drop = FALSE]
+
+# Assign unique rownames
+rownames(filtered_IFN2_counts) <- make.unique(gene_symbols_IFN2[gene_symbols_IFN2 %in% IFN2])
+# ----- STEP 2: Compute MEs for IFN2 -----
+MEs_IFN2 <- compute_MEs(filtered_IFN2_counts)
+head(MEs_IFN2$MEs, 5)
+saveRDS(MEs_IFN2, file = "MEs_IFN2.KV1.3.Proteomics.rds")
+
+# ----- STEP 3: Prepare Data Frame for Plot -----
+# Check that sample names are aligned
+if (!all(rownames(MEs_IFN2$datExpr) == rownames(KV1_3_Bulk_Brain_Priteomics_Metadata))) {
+  stop("Mismatch between expression data and metadata rownames for IFN2!")
+}
+
+MEs_IFN2_df <- data.frame(
+  Eigengene = MEs_IFN2$MEs$MEModule1,
+  Module = "KV1.3 Proteomics IFN2",
+  Treatment = KV1_3_Bulk_Brain_Priteomics_Metadata$Group
+)
+
+write.csv(MEs_IFN2_df, file = "MEs_IFN2_df.csv", row.names = FALSE)
+
+# ----- STEP 4: Generate and Print Boxplot -----
+#p_IFN2 <- create_boxplot(MEs_IFN2_df, "IFN2")
+print(p_IFN2)
+
+
+##advanced combined plot for both IFN1 and IFN2
+combined_df <- rbind(MEs_IFN1_df, MEs_IFN2_df)
+
+p_combined <- ggboxplot(combined_df, x = "Treatment", y = "Eigengene", fill = "Treatment",
+                        palette = condition_colors, facet.by = "Module", short.panel.labs = TRUE) +
+  stat_compare_means(method = "anova", label.y = max(combined_df$Eigengene, na.rm = TRUE) * 1.1) +
+  stat_compare_means(method = "wilcox.test", label = "p.format", comparisons = comparisons) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(title = "IFN1 vs IFN2 Module Eigengenes", y = "Eigengene")
+
+print(p_combined)
+
+```
+
+
+```{r PAP1 KV1.3 PROTEOMICS Venn for IFN1 and IFN2}
+#FOR PAP1 UP and Down
+library(VennDiagram)
+library(ggvenn)
+
+# Clean and prepare data
+gene_sets <- list(
+  Pap1.Up   = na.omit(PAP1.VS.CONTROL.UP$Protein),
+  Pap1.Down = na.omit(PAP1.VS.CONTROL.DOWN$Protein),
+  IFN1    = IFN1,
+  IFN2  = IFN2)
+
+# Plot
+ggvenn(gene_sets, fill_color = c("red", "green", "blue", "yellow"))
+
+```
+
+
+```{r PAP1 and ShkKV1.3 PROTEOMICS Venn for Resilience}
+Pro.Resilience.Mouse <- readRDS("~/Desktop/GO.Kv1.3.Proteomics/Pro.Resilience.Mouse.rds")
+Anti.Resilience.Mouse <- readRDS("~/Desktop/GO.Kv1.3.Proteomics/Anti.Resilience.Mouse.rds")
+# Clean and prepare data
+gene_sets <- list(
+  Pap1.Up   = na.omit(PAP1.VS.CONTROL.UP$Protein),
+  Pap1.Down = na.omit(PAP1.VS.CONTROL.DOWN$Protein),
+Pro.Resilience    = Pro.Resilience.Mouse,
+Anti.Resilience  = Anti.Resilience.Mouse)
+
+# Plot
+ggvenn(gene_sets, fill_color = c("orange", "green", "blue", "yellow"))
+```
+
+
+
+```{r SHK KV1.3 PROTEOMICS Venn for IFN1 and IFN2}
+#FOR PAP1 UP and Down
+library(VennDiagram)
+library(ggvenn)
+
+# Clean and prepare data
+gene_sets <- list(
+  ShK.Up   = na.omit(ShK.vs.PBS.UP$Protein),
+  ShK.Down = na.omit(ShK.vs.PBS.DOWN$Protein),
+  IFN1    = IFN1,
+  IFN2  = IFN2)
+
+# Plot
+ggvenn(gene_sets, fill_color = c("red", "green", "blue", "yellow"))
+```
+
+
+```{r Module for Pro.resilience}
+Pro.Resilience.Mouse <- readRDS("~/Desktop/GO.Kv1.3.Proteomics/Pro.Resilience.Mouse.rds")
+
+# Extract gene symbols from rownames (strip off everything after "_")
+gene_symbols <- sub("_.*", "", rownames(KV1.3.BULK.BRAIN.PRoteomics.normalized))
+
+# Filter using gene symbols for each category
+Pro.Resilience_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[gene_symbols %in% Pro.Resilience.Mouse, ]
+
+rownames(Pro.Resilience_counts) <- gene_symbols[gene_symbols %in% Pro.Resilience.Mouse]
+
+dim(Pro.Resilience_counts)
+#WGCNA 
+library(writexl)
+library(WGCNA)
+# Ensure WGCNA settings
+options(stringsAsFactors = FALSE)
+allowWGCNAThreads()  # Enables parallel computation for WGCNA
+# Function to compute Module Eigengenes (MEs)
+compute_MEs <- function(count_data) {
+  if (!exists("count_data") || nrow(count_data) == 0) {
+    stop("Error: count_data is empty or not found. Check gene filtering!")
+  }
+  
+  # Remove rows with any NA values
+  count_data <- count_data[complete.cases(count_data), ]
+  
+  if (nrow(count_data) == 0) {
+    stop("Error: All genes were removed after NA filtering. Check data!")
+  }
+  
+  # Transpose so genes are columns, samples are rows
+  datExpr <- t(count_data)
+  datExpr <- as.data.frame(datExpr)
+  
+  # Ensure minimum variance for module calculation
+  if (ncol(datExpr) < 2) {
+    stop("Error: Too few genes to compute eigengenes. Check input!")
+  }
+
+  # Assign all genes to a single module
+  module_colors <- rep("Module1", ncol(datExpr))
+
+  # Compute Module Eigengenes
+  MEs <- tryCatch({
+    moduleEigengenes(datExpr, colors = module_colors)$eigengenes
+  }, error = function(e) {
+    stop("Error in computing Module Eigengenes: ", e$message)
+  })
+  
+  return(list(MEs = MEs, datExpr = datExpr))  # Return both MEs and transformed data
+}
+
+# Ensure input data exists
+if (!exists("mito_counts") || !exists("synaptic_counts") || !exists("ribosomal_counts")) {
+  stop("Error: One or more count datasets (mito_counts, synaptic_counts, ribosomal_counts) are missing!")
+}
+
+if (!exists("mitochondrial.Pro.resilience") || !exists("synaptic.Pro.resilience") || !exists("ribosomes.Pro.resilience")) {
+  stop("Error: One or more gene lists (mitochondrial.Pro.resilience, synaptic.Pro.resilience, ribosomes.Pro.resilience) are missing!")
+}
+
+
+
+# Function to compute kME values
+compute_kME <- function(datExpr, MEs) {
+  if (nrow(datExpr) == 0) {
+    stop("Error: datExpr is empty. Check gene filtering!")
+  }
+  if (nrow(MEs$MEs) == 0) {
+    stop("Error: MEs are empty. Eigengene computation may have failed.")
+  }
+
+  # Ensure column names match
+  colnames(MEs$MEs) <- paste0("ME", colnames(MEs$MEs))
+  
+  kMEdat <- tryCatch({
+    signedKME(datExpr, MEs$MEs, outputColumnName = "kME_")
+  }, error = function(e) {
+    stop("Error in computing kME: ", e$message)
+  })
+  
+  return(kMEdat)
+}
+
+# Compute kME for each gene set
+
+# Extract gene symbols from rownames
+gene_symbols_Pro.Resilience <- sub("_.*", "", rownames(Pro.Resilience_counts))
+
+# Filter mito_counts based on gene symbols
+filtered.Pro.Resilience_counts <- Pro.Resilience_counts[gene_symbols_Pro.Resilience %in% Pro.Resilience.Mouse, , drop = FALSE]
+
+# Optional: set clean rownames
+rownames(filtered.Pro.Resilience_counts) <- gene_symbols_Pro.Resilience[gene_symbols_Pro.Resilience %in% Pro.Resilience.Mouse]
+
+# Check dimensions to confirm it worked
+dim(filtered.Pro.Resilience_counts)
+
+# Now run compute_MEs
+MEs_Pro.Resilience <- compute_MEs(filtered.Pro.Resilience_counts)
+
+
+# Preview results
+head(MEs_Pro.Resilience$MEs, 5)
+
+saveRDS(MEs_Pro.Resilience, file = 'MEs_Pro.Resilience.KV1.3.Proteomics.rds')
+
+##BOX PLOT FOR INTERFERON BASED ON MEs
+#Define Color Palette for These Groups
+
+condition_colors <- c(
+  "Control" = "#1f78b4",
+  "Pap1" = "#33a02c",
+  "PBS" = "#6a3d9a",
+  "SHK" = "#e31a1c"
+)
+
+
+#Define Comparisons for t-test
+comparisons <- list(
+  c("Pap1", "Control"),
+  c("SHK", "PBS")
+)
+
+#Create Boxplot Function
+library(ggplot2)
+library(ggpubr)
+
+create_boxplot <- function(data, title) {
+  ggboxplot(data, x = "Treatment", y = "Eigengene", fill = "Treatment", 
+            palette = condition_colors) +
+    stat_compare_means(method = "anova", label.y = max(data$Eigengene, na.rm = TRUE) * 1.1) +
+    stat_compare_means(method = "t.test", label = "p.format", comparisons = comparisons) +
+    theme_minimal() +
+    labs(title = title, x = "Treatment", y = "Eigengene")
+}
+
+# Prepare data for each module separately
+MEs_Pro.Resilience_df <- data.frame(
+  Eigengene = MEs_Pro.Resilience$MEs$MEModule1,
+  Module = "KV1.3 Proteomics Pro.Resilience",
+  Treatment = KV1_3_Bulk_Brain_Priteomics_Metadata$Group)
+
+write.csv(MEs_Pro.Resilience_df, file = 'MEs_Pro.Resilience_df.csv')
+
+#Generate Boxplots for Each Module
+p_Pro.Resilience <- create_boxplot(MEs_Pro.Resilience_df, "Pro.Resilience")
+p_Pro.Resilience
+```
+
+
+```{r create_boxplot() function to accept custom comparisons}
+create_boxplot <- function(data, title, comparisons) {
+  p <- ggboxplot(data, x = "Treatment", y = "Eigengene", fill = "Treatment", 
+                 palette = condition_colors) +
+    stat_compare_means(method = "t.test", label = "p.format", comparisons = comparisons) +
+    theme_minimal() +
+    labs(title = title, x = "Treatment", y = "Eigengene")
+  
+  # Add ANOVA only if more than two groups
+  if (length(unique(data$Treatment)) > 2) {
+    p <- p + stat_compare_means(method = "anova", 
+                                 label.y = max(data$Eigengene, na.rm = TRUE) * 1.1)
+  }
+  
+  return(p)
+}
+
+
+#Subset the data for each comparison
+
+# Subset for Pap1 vs Control
+data_Pap1_vs_Control <- subset(MEs_Pro.Resilience_df, Treatment %in% c("Pap1", "Control"))
+
+# Subset for SHK vs PBS
+data_SHK_vs_PBS <- subset(MEs_Pro.Resilience_df, Treatment %in% c("SHK", "PBS"))
+
+#Define comparisons for each subset
+comparisons_Pap1_vs_Control <- list(c("Pap1", "Control"))
+comparisons_SHK_vs_PBS <- list(c("SHK", "PBS"))
+
+#Generate the boxplots
+p_Pap1_vs_Control <- create_boxplot(data_Pap1_vs_Control, "Pap1 vs Control:Pro.Resilience", comparisons_Pap1_vs_Control)
+p_SHK_vs_PBS <- create_boxplot(data_SHK_vs_PBS, "SHK vs PBS:Pro.Resilience", comparisons_SHK_vs_PBS)
+
+# View plots
+p_Pap1_vs_Control
+p_SHK_vs_PBS
+
+#Save the plots
+ggsave("Pap1_vs_Control_Boxplot.png", p_Pap1_vs_Control, width = 6, height = 4)
+ggsave("SHK_vs_PBS_Boxplot.png", p_SHK_vs_PBS, width = 6, height = 4)
+
+```
+
+
+```{r Interferon list based MEs}
+# Load gene sets
+IFN1.UP.825 <- readRDS("~/Desktop/Resilience.SFN/Brain.Resilience.SFN/IFN1.UP.825.rds")
+IFN1.Down.721 <- readRDS("~/Desktop/Resilience.SFN/Brain.Resilience.SFN/IFN1.Down.721.rds")
+
+IFN2.UP.913 <- readRDS("~/Desktop/Resilience.SFN/Brain.Resilience.SFN/IFN2.UP.913.rds")
+IFN2.Down.1126 <- readRDS("~/Desktop/Resilience.SFN/Brain.Resilience.SFN/IFN2.Down.1126.rds")
+
+IFN1.UP_IFN2.UP.111 <- readRDS("~/Desktop/Resilience.SFN/Brain.Resilience.SFN/IFN1.UP_IFN2.UP.111.rds")
+IFN2.Down_IFN1.Down.135 <- readRDS("~/Desktop/Resilience.SFN/Brain.Resilience.SFN/IFN2.Down_IFN1.Down.135.rds")
+
+# Extract gene symbols
+gene_symbols <- sub("_.*", "", rownames(KV1.3.BULK.BRAIN.PRoteomics.normalized))
+
+# Color palette for groups
+condition_colors <- c(
+  "Control" = "#1f78b4",
+  "Pap1" = "#33a02c",
+  "PBS" = "#6a3d9a",
+  "SHK" = "#e31a1c"
+)
+
+# Define comparisons for t-tests
+comparisons <- list(
+  c("Pap1", "Control"),
+  c("SHK", "PBS")
+)
+
+# Boxplot function
+library(ggplot2)
+library(ggpubr)
+
+create_boxplot <- function(data, title, comparisons) {
+  ggboxplot(data, x = "Treatment", y = "Eigengene", fill = "Treatment", 
+            palette = condition_colors) +
+    stat_compare_means(method = "anova", label.y = max(data$Eigengene, na.rm = TRUE) * 1.1) +
+    stat_compare_means(method = "t.test", label = "p.format", comparisons = comparisons) +
+    theme_minimal() +
+    labs(title = title, x = "Treatment", y = "Eigengene")
+}
+
+# -----------------------------
+# IFN1.UP.825 Processing
+IFN1_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[gene_symbols %in% IFN1.UP.825, ]
+rownames(IFN1_counts) <- gene_symbols[gene_symbols %in% IFN1.UP.825]
+
+MEs_IFN1 <- compute_MEs(IFN1_counts)
+saveRDS(MEs_IFN1, file = 'MEs_IFN1.KV1.3.Proteomics.rds')
+
+MEs_IFN1_df <- data.frame(
+  Eigengene = MEs_IFN1$MEs$MEModule1,
+  Module = "KV1.3 Proteomics IFN1.UP.825",
+  Treatment = KV1_3_Bulk_Brain_Priteomics_Metadata$Group  # Corrected name
+)
+
+write.csv(MEs_IFN1_df, file = 'MEs_IFN1_df.IFN1.UP.825.csv')
+
+p1 <- create_boxplot(MEs_IFN1_df, "IFN1.UP.825", comparisons)
+
+# -----------------------------
+# IFN2.UP.913 Processing
+IFN2_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[gene_symbols %in% IFN2.UP.913, ]
+rownames(IFN2_counts) <- make.unique(gene_symbols[gene_symbols %in% IFN2.UP.913])
+
+
+MEs_IFN2 <- compute_MEs(IFN2_counts)
+saveRDS(MEs_IFN2, file = 'MEs_IFN2.KV1.3.Proteomics.rds')
+
+MEs_IFN2_df <- data.frame(
+  Eigengene = MEs_IFN2$MEs$MEModule1,
+  Module = "KV1.3 Proteomics IFN2.UP.913",
+  Treatment = KV1_3_Bulk_Brain_Priteomics_Metadata$Group  # Corrected name
+)
+write.csv(MEs_IFN2_df, file = 'MEs_IFN2_df.IFN2.UP.913.csv')
+
+p2 <- create_boxplot(MEs_IFN2_df, "IFN2.UP.913", comparisons)
+p2
+
+##
+IFN1.Down.721 <- readRDS("~/Desktop/Resilience.SFN/Brain.Resilience.SFN/IFN1.Down.721.rds")
+IFN1_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[gene_symbols %in% IFN1.Down.721, ]
+rownames(IFN1_counts) <- gene_symbols[gene_symbols %in% IFN1.Down.721]
+
+MEs_IFN1 <- compute_MEs(IFN1_counts)
+saveRDS(MEs_IFN1, file = 'MEs_IFN1.KV1.3.Proteomics.IFN1.Down.721.rds')
+
+MEs_IFN1_df <- data.frame(
+  Eigengene = MEs_IFN1$MEs$MEModule1,
+  Module = "KV1.3 Proteomics IFN1.Down.721",
+  Treatment = KV1_3_Bulk_Brain_Priteomics_Metadata$Group  # Corrected name
+)
+
+write.csv(MEs_IFN1_df, file = 'MEs_IFN1_df.IFN1.Down.721.csv')
+
+p3 <- create_boxplot(MEs_IFN1_df, "IFN1.Down.721", comparisons)
+p3
+
+
+##
+##
+IFN2.Down.1126 <- readRDS("~/Desktop/Resilience.SFN/Brain.Resilience.SFN/IFN2.Down.1126.rds")
+IFN1_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[gene_symbols %in% IFN2.Down.1126, ]
+rownames(IFN1_counts) <- gene_symbols[gene_symbols %in% IFN2.Down.1126]
+
+MEs_IFN1 <- compute_MEs(IFN1_counts)
+saveRDS(MEs_IFN1, file = 'MEs_IFN1.KV1.3.Proteomics.IFN2.Down.1126.rds')
+
+MEs_IFN1_df <- data.frame(
+  Eigengene = MEs_IFN1$MEs$MEModule1,
+  Module = "KV1.3 Proteomics IFN2.Down.1126",
+  Treatment = KV1_3_Bulk_Brain_Priteomics_Metadata$Group  # Corrected name
+)
+
+write.csv(MEs_IFN1_df, file = 'MEs_IFN1_df.IFN2.Down.1126.csv')
+
+p4 <- create_boxplot(MEs_IFN1_df, "IFN2.Down.1126", comparisons)
+p4
+```
+
+
+```{r updated boxplot after remove annova}
+library(ggplot2)
+library(ggpubr)
+create_boxplot <- function(data, title, comparisons) {
+  ggboxplot(data, x = "Treatment", y = "Eigengene", fill = "Treatment", 
+            palette = condition_colors) +
+    stat_compare_means(method = "t.test", label = "p.format", comparisons = comparisons) +
+    theme_minimal() +
+    labs(title = title, x = "Treatment", y = "Eigengene")
+}
+# Color palette for groups
+condition_colors <- c(
+  "Control" = "#1f78b4",
+  "Pap1" = "#33a02c",
+  "PBS" = "#6a3d9a",
+  "SHK" = "#e31a1c"
+)
+
+# Define comparisons for t-tests
+comparisons <- list(
+  c("Pap1", "Control"),
+  c("SHK", "PBS")
+)
+
+# Pap1 vs Control
+comp_pap1_control <- list(c("Pap1", "Control"))
+df_pap1_control <- subset(MEs_IFN1_df, Treatment %in% c("Pap1", "Control"))
+p_IFN1_pap1_control <- create_boxplot(df_pap1_control, "IFN1.UP.825: Pap1 vs Control", comp_pap1_control)
+p_IFN1_pap1_control
+# SHK vs PBS
+comp_shk_pbs <- list(c("SHK", "PBS"))
+df_shk_pbs <- subset(MEs_IFN1_df, Treatment %in% c("SHK", "PBS"))
+p_IFN1_shk_pbs <- create_boxplot(df_shk_pbs, "IFN1.UP.825: SHK vs PBS", comp_shk_pbs)
+
+p_IFN1_shk_pbs
+
+saveRDS(p_IFN1_pap1_control, file = 'p_IFN1_pap1_control.IFN1.UP.825.rds')
+saveRDS(p_IFN1_shk_pbs, file = 'p_IFN1_shk_pbs.IFN1.UP.825.rds')
+```
+
+
+```{r ME box plot for Anti.resilience}
+Anti.Resilience.Mouse <- readRDS("~/Desktop/GO.Kv1.3.Proteomics/Anti.Resilience.Mouse.rds")
+# Extract gene symbols from rownames (strip off everything after "_")
+gene_symbols <- sub("_.*", "", rownames(KV1.3.BULK.BRAIN.PRoteomics.normalized))
+
+# Filter using gene symbols for each category
+Anti.Resilience_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[gene_symbols %in% Anti.Resilience.Mouse, ]
+
+rownames(Anti.Resilience_counts) <- gene_symbols[gene_symbols %in% Anti.Resilience.Mouse]
+
+dim(Anti.Resilience_counts)
+
+#WGCNA 
+library(writexl)
+library(WGCNA)
+# Ensure WGCNA settings
+options(stringsAsFactors = FALSE)
+allowWGCNAThreads()  # Enables parallel computation for WGCNA
+# Function to compute Module Eigengenes (MEs)
+compute_MEs <- function(count_data) {
+  if (!exists("count_data") || nrow(count_data) == 0) {
+    stop("Error: count_data is empty or not found. Check gene filtering!")
+  }
+  
+  # Remove rows with any NA values
+  count_data <- count_data[complete.cases(count_data), ]
+  
+  if (nrow(count_data) == 0) {
+    stop("Error: All genes were removed after NA filtering. Check data!")
+  }
+  
+  # Transpose so genes are columns, samples are rows
+  datExpr <- t(count_data)
+  datExpr <- as.data.frame(datExpr)
+  
+  # Ensure minimum variance for module calculation
+  if (ncol(datExpr) < 2) {
+    stop("Error: Too few genes to compute eigengenes. Check input!")
+  }
+
+  # Assign all genes to a single module
+  module_colors <- rep("Module1", ncol(datExpr))
+
+  # Compute Module Eigengenes
+  MEs <- tryCatch({
+    moduleEigengenes(datExpr, colors = module_colors)$eigengenes
+  }, error = function(e) {
+    stop("Error in computing Module Eigengenes: ", e$message)
+  })
+  
+  return(list(MEs = MEs, datExpr = datExpr))  # Return both MEs and transformed data
+}
+
+# Ensure input data exists
+if (!exists("mito_counts") || !exists("synaptic_counts") || !exists("ribosomal_counts")) {
+  stop("Error: One or more count datasets (mito_counts, synaptic_counts, ribosomal_counts) are missing!")
+}
+
+if (!exists("mitochondrial.Pro.resilience") || !exists("synaptic.Pro.resilience") || !exists("ribosomes.Pro.resilience")) {
+  stop("Error: One or more gene lists (mitochondrial.Pro.resilience, synaptic.Pro.resilience, ribosomes.Pro.resilience) are missing!")
+}
+
+
+
+# Function to compute kME values
+compute_kME <- function(datExpr, MEs) {
+  if (nrow(datExpr) == 0) {
+    stop("Error: datExpr is empty. Check gene filtering!")
+  }
+  if (nrow(MEs$MEs) == 0) {
+    stop("Error: MEs are empty. Eigengene computation may have failed.")
+  }
+
+  # Ensure column names match
+  colnames(MEs$MEs) <- paste0("ME", colnames(MEs$MEs))
+  
+  kMEdat <- tryCatch({
+    signedKME(datExpr, MEs$MEs, outputColumnName = "kME_")
+  }, error = function(e) {
+    stop("Error in computing kME: ", e$message)
+  })
+  
+  return(kMEdat)
+}
+
+# Compute kME for each gene set
+
+# Extract gene symbols from rownames
+gene_symbols_Anti.Resilience <- sub("_.*", "", rownames(Anti.Resilience_counts))
+
+# Filter mito_counts based on gene symbols
+filtered.Anti.Resilience_counts <- Anti.Resilience_counts[gene_symbols_Anti.Resilience %in% Anti.Resilience.Mouse, , drop = FALSE]
+
+# Optional: set clean rownames
+rownames(filtered.Anti.Resilience_counts) <- gene_symbols_Anti.Resilience[gene_symbols_Anti.Resilience %in% Anti.Resilience.Mouse]
+
+# Check dimensions to confirm it worked
+dim(filtered.Anti.Resilience_counts)
+
+# Now run compute_MEs
+MEs_Anti.Resilience <- compute_MEs(filtered.Anti.Resilience_counts)
+
+
+# Preview results
+head(MEs_Anti.Resilience $MEs, 5)
+
+saveRDS(MEs_Anti.Resilience , file = 'MEs_Anti.Resilience.KV1.3.Proteomics.rds')
+
+##BOX PLOT FOR INTERFERON BASED ON MEs
+#Define Color Palette for These Groups
+
+condition_colors <- c(
+  "Control" = "#1f78b4",
+  "Pap1" = "#33a02c",
+  "PBS" = "#6a3d9a",
+  "SHK" = "#e31a1c"
+)
+
+
+#Define Comparisons for t-test
+comparisons <- list(
+  c("Pap1", "Control"),
+  c("SHK", "PBS")
+)
+
+#Create Boxplot Function
+library(ggplot2)
+library(ggpubr)
+
+create_boxplot <- function(data, title) {
+  ggboxplot(data, x = "Treatment", y = "Eigengene", fill = "Treatment", 
+            palette = condition_colors) +
+    stat_compare_means(method = "anova", label.y = max(data$Eigengene, na.rm = TRUE) * 1.1) +
+    stat_compare_means(method = "t.test", label = "p.format", comparisons = comparisons) +
+    theme_minimal() +
+    labs(title = title, x = "Treatment", y = "Eigengene")
+}
+
+# Prepare data for each module separately
+ MEs_Anti.Resilience_df <- data.frame(
+  Eigengene = MEs_Anti.Resilience$MEs$MEModule1,
+  Module = "KV1.3 Proteomics Anti.Resilience",
+  Treatment = KV1_3_Bulk_Brain_Priteomics_Metadata$Group)
+
+write.csv( MEs_Anti.Resilience_df, file = ' MEs_Anti.Resilience_df.csv')
+
+#Generate Boxplots for Each Module
+p_Anti.Resilience <- create_boxplot(MEs_Anti.Resilience_df, "Anti.Resilience")
+p_Anti.Resilience
+```
+
+
+```{r create_boxplot() function to accept custom comparisons for Anti.resilience}
+create_boxplot <- function(data, title, comparisons) {
+  p <- ggboxplot(data, x = "Treatment", y = "Eigengene", fill = "Treatment", 
+                 palette = condition_colors) +
+    stat_compare_means(method = "t.test", label = "p.format", comparisons = comparisons) +
+    theme_minimal() +
+    labs(title = title, x = "Treatment", y = "Eigengene")
+  
+  # Add ANOVA only if more than two groups
+  if (length(unique(data$Treatment)) > 2) {
+    p <- p + stat_compare_means(method = "anova", 
+                                 label.y = max(data$Eigengene, na.rm = TRUE) * 1.1)
+  }
+  
+  return(p)
+}
+
+
+#Subset the data for each comparison
+
+# Subset for Pap1 vs Control
+data_Pap1_vs_Control <- subset(MEs_Anti.Resilience_df, Treatment %in% c("Pap1", "Control"))
+
+# Subset for SHK vs PBS
+data_SHK_vs_PBS <- subset(MEs_Anti.Resilience_df, Treatment %in% c("SHK", "PBS"))
+
+#Define comparisons for each subset
+comparisons_Pap1_vs_Control <- list(c("Pap1", "Control"))
+comparisons_SHK_vs_PBS <- list(c("SHK", "PBS"))
+
+#Generate the boxplots
+p_Pap1_vs_Control <- create_boxplot(data_Pap1_vs_Control, "Pap1 vs Control:Anti.Resilience", comparisons_Pap1_vs_Control)
+p_SHK_vs_PBS <- create_boxplot(data_SHK_vs_PBS, "SHK vs PBS:Anti.Resilience", comparisons_SHK_vs_PBS)
+
+# View plots
+p_Pap1_vs_Control
+p_SHK_vs_PBS
+  
+```
+
+
+
+```{r create_boxplot() function to accept custom comparisons for Pro.resilience}
+create_boxplot <- function(data, title, comparisons) {
+  p <- ggboxplot(data, x = "Treatment", y = "Eigengene", fill = "Treatment", 
+                 palette = condition_colors) +
+    stat_compare_means(method = "t.test", label = "p.format", comparisons = comparisons) +
+    theme_minimal() +
+    labs(title = title, x = "Treatment", y = "Eigengene")
+  
+  # Add ANOVA only if more than two groups
+  if (length(unique(data$Treatment)) > 2) {
+    p <- p + stat_compare_means(method = "anova", 
+                                 label.y = max(data$Eigengene, na.rm = TRUE) * 1.1)
+  }
+  
+  return(p)
+}
+
+
+#Subset the data for each comparison
+
+# Subset for Pap1 vs Control
+data_Pap1_vs_Control <- subset(MEs_Pro.Resilience_df, Treatment %in% c("Pap1", "Control"))
+
+# Subset for SHK vs PBS
+data_SHK_vs_PBS <- subset(MEs_Pro.Resilience_df, Treatment %in% c("SHK", "PBS"))
+
+#Define comparisons for each subset
+comparisons_Pap1_vs_Control <- list(c("Pap1", "Control"))
+comparisons_SHK_vs_PBS <- list(c("SHK", "PBS"))
+
+#Generate the boxplots
+p_Pap1_vs_Control <- create_boxplot(data_Pap1_vs_Control, "Pap1 vs Control:Pro.Resilience", comparisons_Pap1_vs_Control)
+p_SHK_vs_PBS <- create_boxplot(data_SHK_vs_PBS, "SHK vs PBS:Pro.Resilience", comparisons_SHK_vs_PBS)
+
+# View plots
+p_Pap1_vs_Control
+p_SHK_vs_PBS
+  
+
+```
+
+
+```{r Mitocarta based ME ANALYSIS}
+# Load libraries
+library(readr)
+library(WGCNA)
+library(writexl)
+library(ggplot2)
+library(ggpubr)
+
+# Set options
+options(stringsAsFactors = FALSE)
+allowWGCNAThreads()
+
+# Load Mitocarta gene list
+Mouse_Mitocarta <- read_csv("Mouse.Mitocarta.csv")  # Ensure "MitoCarta" is a valid column
+
+# Extract gene symbols from rownames
+gene_symbols <- sub("_.*", "", rownames(KV1.3.BULK.BRAIN.PRoteomics.normalized))
+
+# Filter expression data for Mitocarta genes
+Mouse_Mitocarta_counts <- KV1.3.BULK.BRAIN.PRoteomics.normalized[gene_symbols %in% Mouse_Mitocarta$MitoCarta, , drop = FALSE]
+
+# Ensure unique rownames
+rownames(Mouse_Mitocarta_counts) <- make.unique(gene_symbols[gene_symbols %in% Mouse_Mitocarta$MitoCarta])
+
+# Confirm subset worked
+dim(Mouse_Mitocarta_counts)
+
+# --- Compute Module Eigengenes ---
+compute_MEs <- function(count_data) {
+  if (nrow(count_data) == 0) stop("Error: count_data is empty or not found.")
+  count_data <- count_data[complete.cases(count_data), ]
+  if (nrow(count_data) == 0) stop("Error: All genes removed after NA filtering.")
+  
+  datExpr <- as.data.frame(t(count_data))
+  if (ncol(datExpr) < 2) stop("Error: Too few genes to compute eigengenes.")
+  
+  module_colors <- rep("Module1", ncol(datExpr))
+  
+  MEs <- tryCatch({
+    moduleEigengenes(datExpr, colors = module_colors)$eigengenes
+  }, error = function(e) {
+    stop("Error in computing Module Eigengenes: ", e$message)
+  })
+  
+  list(MEs = MEs, datExpr = datExpr)
+}
+
+# --- Compute kME ---
+compute_kME <- function(datExpr, MEs) {
+  if (nrow(datExpr) == 0) stop("Error: datExpr is empty.")
+  if (nrow(MEs$MEs) == 0) stop("Error: MEs are empty.")
+  
+  colnames(MEs$MEs) <- paste0("ME", colnames(MEs$MEs))
+  
+  kMEdat <- tryCatch({
+    signedKME(datExpr, MEs$MEs, outputColumnName = "kME_")
+  }, error = function(e) {
+    stop("Error in computing kME: ", e$message)
+  })
+  
+  return(kMEdat)
+}
+
+# --- Compute MEs for Mitocarta gene set ---
+MEs_Mitocarta <- compute_MEs(Mouse_Mitocarta_counts)
+
+# Save eigengene result
+saveRDS(MEs_Mitocarta, file = "MEs_Mitocarta.KV1.3.Proteomics.rds")
+
+# --- Prepare DataFrame for Plotting ---
+# Confirm the name of the eigengene
+eigengene_name <- names(MEs_Mitocarta$MEs)[1]  # Typically "ME1" or "Module1"
+
+# Build plotting data frame
+MEs_Mitocarta_df <- data.frame(
+  Eigengene = MEs_Mitocarta$MEs[[eigengene_name]],
+  Module = "KV1.3 Proteomics Mitocarta",
+  Treatment = KV1_3_Bulk_Brain_Priteomics_Metadata$Group)
+
+
+# Save table
+write.csv(MEs_Mitocarta_df, file = "MEs_Mitocarta_df.csv", row.names = FALSE)
+
+# --- Define Boxplot Colors and Comparisons ---
+condition_colors <- c(
+  "Control" = "#1f78b4",
+  "Pap1" = "#33a02c",
+  "PBS" = "#6a3d9a",
+  "SHK" = "#e31a1c"
+)
+
+comparisons <- list(
+  c("Pap1", "Control"),
+  c("SHK", "PBS")
+)
+
+# --- Create Boxplot Function ---
+create_boxplot <- function(data, title) {
+  ggboxplot(data, x = "Treatment", y = "Eigengene", fill = "Treatment", 
+            palette = condition_colors) +
+    stat_compare_means(method = "anova", label.y = max(data$Eigengene, na.rm = TRUE) * 1.1) +
+    stat_compare_means(method = "t.test", label = "p.format", comparisons = comparisons) +
+    theme_minimal() +
+    labs(title = title, x = "Treatment", y = "Eigengene")
+}
+
+# --- Generate Plot ---
+p_Mitocarta <- create_boxplot(MEs_Mitocarta_df, "Mitocarta Genes")
+p_Mitocarta
+
+# Optionally save the plot
+ggsave("Mitocarta_Eigengene_Boxplot.png", plot = p_Mitocarta, width = 6, height = 4)
+
+
+####
+create_boxplot <- function(data, title, comparisons) {
+  p <- ggboxplot(data, x = "Treatment", y = "Eigengene", fill = "Treatment", 
+                 palette = condition_colors) +
+    stat_compare_means(method = "t.test", label = "p.format", comparisons = comparisons) +
+    theme_minimal() +
+    labs(title = title, x = "Treatment", y = "Eigengene")
+  
+  # Add ANOVA only if more than two groups
+  if (length(unique(data$Treatment)) > 2) {
+    p <- p + stat_compare_means(method = "anova", 
+                                 label.y = max(data$Eigengene, na.rm = TRUE) * 1.1)
+  }
+  
+  return(p)
+}
+
+
+#Subset the data for each comparison
+
+# Subset for Pap1 vs Control
+data_Pap1_vs_Control <- subset(MEs_Mitocarta_df, Treatment %in% c("Pap1", "Control"))
+
+# Subset for SHK vs PBS
+data_SHK_vs_PBS <- subset(MEs_Mitocarta_df, Treatment %in% c("SHK", "PBS"))
+
+#Define comparisons for each subset
+comparisons_Pap1_vs_Control <- list(c("Pap1", "Control"))
+comparisons_SHK_vs_PBS <- list(c("SHK", "PBS"))
+
+#Generate the boxplots
+p_Pap1_vs_Control <- create_boxplot(data_Pap1_vs_Control, "Pap1 vs Control:MitoCarta", comparisons_Pap1_vs_Control)
+p_SHK_vs_PBS <- create_boxplot(data_SHK_vs_PBS, "SHK vs PBS:MitoCarta", comparisons_SHK_vs_PBS)
+
+# View plots
+p_Pap1_vs_Control
+p_SHK_vs_PBS
+
+```
+

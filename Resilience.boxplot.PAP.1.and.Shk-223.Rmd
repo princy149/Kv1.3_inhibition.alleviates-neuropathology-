@@ -1,0 +1,288 @@
+---
+title: 'Resilience Study: PAP1 vs Control & ShK vs PBS'
+author: "Dr UPASNA"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r Load Required Libraries}
+# Data Processing
+library(readr)
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+# Statistical Analysis & Visualization
+library(ggplot2)
+library(ggpubr)
+library(pheatmap)
+library(ComplexHeatmap)
+# Differential Expression
+library(DESeq2)
+library(limma)
+# Gene Annotation & Enrichment
+library(org.Hs.eg.db)
+library(org.Mm.eg.db)
+library(clusterProfiler)
+# WGCNA for Network Analysis
+library(WGCNA)
+options(stringsAsFactors = FALSE)
+```
+
+```{r Define Gene Sets for Pro-Resilience}
+# Mitochondrial, Synaptic, and Ribosomal Genes
+mitochondrial.Pro.resilience <- c("Mcu", "Actn4", "Pdha1", "Gad1", "Atp1a1", "L2hgdh", "Slc25a11", "Pdhb",
+                                   "Cox4i1", "Tmem63b", "Tmem65", "Diras1", "Idh3b", "Atad1", "Mtx2", "Gk",
+                                   "Timm8a", "Atp2b2", "Ndufs8", "Coa1", "Hcn1", "Idh3a", "Ndufb7", "Mpc2",
+                                   "Gcsh", "Bdh1", "Timm44", "Cacng2", "Lpcat4", "Agpat5", "Elmod1", "Cpt1a",
+                                   "Adam11", "Prrt3", "Nfs1", "Cadps2", "Slc25a3", "Fam162a", "Cadps", "Iscu",
+                                   "Tmem126b", "Ndufv3", "Adcy1", "Nipsnap1", "Dbt", "Ahcyl2")
+
+synaptic.Pro.resilience <- c("Tmod1", "Lancl2", "Sep11", "Hpca", "Ctnna2", "Gsk3a", "Pak1", "Numb",
+                             "C12orf57", "Palm2", "Actn1", "Rab35", "Ica1", "Gng3", "Calb1", "Syngap1",
+                             "Rimbp2", "Ppp2r2c", "Gga1", "Dnajc19", "Snap25", "Sh3gl1", "Ctnnb1")
+
+ribosomes.Pro.resilience <- c("Lyrm7", "Rp113", "Rpl9", "Rps9", "Rp113a", "Ndufaf1", "Rps25", "Rpl5",
+                              "Rps15", "Smyd1", "Rplp0", "Rpl30", "Rpl128", "Lars2", "Skp2b", "Lmperg",
+                              "Acad9", "Mmp32", "D2hgdh", "Rpl10")
+
+# Store in a list
+gene_lists <- list(
+  Mitochondrial = mitochondrial.Pro.resilience,
+  Synaptic = synaptic.Pro.resilience,
+  Ribosomal = ribosomes.Pro.resilience
+)
+
+# Print Summary
+str(gene_lists)
+```
+
+
+```{r Load & Preprocess KV1.3 Bulk RNA-Seq Data}
+# Load Count Data & Metadata
+KV1.3.Brain.count <- readRDS("~/Desktop/KV1.3.BRAIN/KV1.3.Brain.count.rds")
+Brain_Metadata <- readRDS("~/Desktop/KV1.3.BRAIN/Brain_Metadata.rds")
+# Filter genes with low expression
+#filtered_counts <- KV1.3.Brain.count[rowMeans(KV1.3.Brain.count) > 10, ]
+# Convert Treatment to Factor
+Brain_Metadata$Treatment <- factor(Brain_Metadata$Treatment)
+
+# Create Metadata Data Frame
+metadata <- data.frame(
+  row.names = colnames(KV1.3.Brain.count),
+  Treatment = Brain_Metadata$Treatment
+)
+
+# Subset Metadata for PAP1 vs Control
+metadata.PAP1.Control <- subset(metadata, Treatment %in% c("PAP1", "Control"))
+
+# Subset Count Data
+filtered_counts_PAP1_Control <- KV1.3.Brain.count[, rownames(metadata.PAP1.Control)]
+
+# Save Processed Data
+saveRDS(filtered_counts_PAP1_Control, "filtered_counts_PAP1_Control.without.filter.rds")
+
+```
+
+
+```{r WGCNA for PAP1 vs Control}
+# Extract Expression Data for Gene Sets
+mito_counts <- filtered_counts_PAP1_Control[rownames(filtered_counts_PAP1_Control) %in% mitochondrial.Pro.resilience, ]
+synaptic_counts <- filtered_counts_PAP1_Control[rownames(filtered_counts_PAP1_Control) %in% synaptic.Pro.resilience, ]
+ribosomal_counts <- filtered_counts_PAP1_Control[rownames(filtered_counts_PAP1_Control) %in% ribosomes.Pro.resilience, ]
+write.csv(mito_counts, file = 'mito_counts.PAP1.vs.Control.csv')
+write.csv(synaptic_counts, file = 'synaptic_counts.PAP1.vs.Control.csv')
+write.csv(ribosomal_counts, file = 'ribosomal_counts.PAP1.vs.Control.csv')
+```
+
+
+```{r Calculate Module Eigengenes (MEs) for Each Gene Set PAP1 vs. Control}
+count_data <- filtered_counts_PAP1_Control
+# Load required libraries
+library(WGCNA)
+library(readxl)
+library(writexl)
+
+# Ensure WGCNA settings
+options(stringsAsFactors = FALSE)
+
+# Function to compute Module Eigengenes (MEs)
+compute_MEs <- function(count_data) {
+  datExpr <- t(count_data)  # Transpose so genes are columns, samples are rows
+  datExpr <- as.data.frame(datExpr)
+
+  # Assign all genes to a single module
+  module_colors <- rep("Module1", ncol(datExpr))
+
+  # Compute Module Eigengenes
+  MEs <- moduleEigengenes(datExpr, colors = module_colors)$eigengenes
+  return(list(MEs = MEs, datExpr = datExpr))  # Return both MEs and transformed data
+}
+
+# Compute MEs for each gene set (store transformed expression data too)
+MEs_mito <- compute_MEs(filtered_counts_PAP1_Control[rownames(filtered_counts_PAP1_Control) %in% mitochondrial.Pro.resilience, ])
+MEs_synaptic <- compute_MEs(filtered_counts_PAP1_Control[rownames(filtered_counts_PAP1_Control) %in% synaptic.Pro.resilience, ])
+MEs_ribosomal <- compute_MEs(filtered_counts_PAP1_Control[rownames(filtered_counts_PAP1_Control) %in% ribosomes.Pro.resilience, ])
+
+# Verify output
+head(MEs_mito$MEs$MEModule1)
+
+# Function to compute kME values
+compute_kME <- function(datExpr, MEs) {
+  kMEdat <- signedKME(datExpr, MEs$MEs, outputColumnName = "kME_")
+  return(kMEdat)
+}
+
+# Compute kME for each gene set
+kME_mito <- compute_kME(MEs_mito$datExpr, MEs_mito)
+kME_synaptic <- compute_kME(MEs_synaptic$datExpr, MEs_synaptic)
+kME_ribosomal <- compute_kME(MEs_ribosomal$datExpr, MEs_ribosomal)
+
+# Save kME tables to Excel
+write_xlsx(list(
+  Mitochondrial = as.data.frame(kME_mito),
+  Synaptic = as.data.frame(kME_synaptic),
+  Ribosomal = as.data.frame(kME_ribosomal)
+), "kME_tables.PAP1.vs.Control.xlsx")
+
+print("kME calculations and Excel file saved successfully!")
+head(MEs_mito, 5)
+head(MEs_synaptic, 5)
+head(MEs_ribosomal, 5)
+
+```
+```{r Boxplots with Significance Bars}
+# Prepare data for boxplots
+MEs_combined <- data.frame(
+  Eigengene = c(MEs_mito$MEs$MEModule1, MEs_synaptic$MEs$MEModule1, MEs_ribosomal$MEs$MEModule1),
+  Module = rep(c("Mitochondrial", "Synaptic", "Ribosomal"), each = nrow(metadata.PAP1.Control)),
+  Treatment = rep(metadata.PAP1.Control$Treatment, 3)
+)
+
+# Save
+write.csv(MEs_combined, file = 'MEs_combined.PAP1.vs.Control.csv')
+
+# Generate boxplots with significance bars
+ggboxplot(MEs_combined, x = "Treatment", y = "Eigengene", fill = "Treatment",
+          palette = c("PAP1" = "purple", "Control" = "darkgreen")) +
+  stat_compare_means(method = "t.test", label = "p.format", 
+                     comparisons = list(c("PAP1", "Control"))) +
+  theme_minimal() +
+  labs(title = "Pro.resilience in PAP1 vs Control",
+       x = "Treatment",
+       y = "Eigengene") +
+  facet_wrap(~ Module, scales = "free_y")  # Separate plots for each module
+
+
+```
+```{r  WGCNA for ShK vs PBS}
+# Extract Data for ShK and PBS
+# Subset Metadata for ShK and PBS
+Brain_Metadata <- readRDS("~/Desktop/KV1.3.BRAIN/Brain_Metadata.rds")
+metadata <- Brain_Metadata
+metadata.ShK.PBS <- subset(Brain_Metadata, Treatment %in% c("ShK", "PBS"))
+# Ensure row names match before subsetting count data
+matched_samples_ShK_PBS <- rownames(metadata.ShK.PBS)[rownames(metadata.ShK.PBS) %in% colnames(KV1.3.Brain.count)]
+# Subset Count Data
+filtered_counts_ShK_PBS <- KV1.3.Brain.count[, matched_samples_ShK_PBS]
+# Save Processed Data
+saveRDS(filtered_counts_ShK_PBS, "filtered_counts_ShK_PBS.without.filter.rds")
+# Extract Expression Data for Gene Sets (Corrected Filtering for ShK vs PBS)
+mito_counts_ShK_PBS <- filtered_counts_ShK_PBS[rownames(filtered_counts_ShK_PBS) %in% mitochondrial.Pro.resilience, ]
+synaptic_counts_ShK_PBS <- filtered_counts_ShK_PBS[rownames(filtered_counts_ShK_PBS) %in% synaptic.Pro.resilience, ]
+ribosomal_counts_ShK_PBS <- filtered_counts_ShK_PBS[rownames(filtered_counts_ShK_PBS) %in% ribosomes.Pro.resilience, ]
+# Save Filtered Gene Counts as CSV
+write.csv(mito_counts_ShK_PBS, file = 'mito_counts.ShK.vs.PBS.csv')
+write.csv(synaptic_counts_ShK_PBS, file = 'synaptic_counts.ShK.vs.PBS.csv')
+write.csv(ribosomal_counts_ShK_PBS, file = 'ribosomal_counts.ShK.vs.PBS.csv')
+print("ShK vs PBS data extraction and saving completed successfully!")
+```
+```{r Calculate Module Eigengenes (MEs) for Each Gene Set ShK vs. PBS}
+# Calculate Module Eigengenes (MEs) for Each Gene Set ShK vs. PBS
+count_data <- filtered_counts_ShK_PBS
+
+# Load required libraries
+library(WGCNA)
+library(readxl)
+library(writexl)
+
+# Ensure WGCNA settings
+options(stringsAsFactors = FALSE)
+
+# Function to compute Module Eigengenes (MEs)
+compute_MEs <- function(count_data) {
+  datExpr <- t(count_data)  # Transpose so genes are columns, samples are rows
+  datExpr <- as.data.frame(datExpr)
+
+  # Assign all genes to a single module
+  module_colors <- rep("Module1", ncol(datExpr))
+
+  # Compute Module Eigengenes
+  MEs <- moduleEigengenes(datExpr, colors = module_colors)$eigengenes
+  return(list(MEs = MEs, datExpr = datExpr))  # Return both MEs and transformed data
+}
+
+# Compute MEs for each gene set (store transformed expression data too)
+MEs_mito <- compute_MEs(filtered_counts_ShK_PBS[rownames(filtered_counts_ShK_PBS) %in% mitochondrial.Pro.resilience, ])
+MEs_synaptic <- compute_MEs(filtered_counts_ShK_PBS[rownames(filtered_counts_ShK_PBS) %in% synaptic.Pro.resilience, ])
+MEs_ribosomal <- compute_MEs(filtered_counts_ShK_PBS[rownames(filtered_counts_ShK_PBS) %in% ribosomes.Pro.resilience, ])
+
+# Verify output
+head(MEs_mito$MEs, 5)  # FIXED: Accessing eigengenes correctly
+
+# Function to compute kME values
+compute_kME <- function(datExpr, MEs) {
+  if (nrow(datExpr) != nrow(MEs$MEs)) {
+    stop("Error: Mismatched rows in datExpr and MEs$MEs")
+  }
+  kMEdat <- signedKME(datExpr, MEs$MEs, outputColumnName = "kME_")
+  return(kMEdat)
+}
+
+# Compute kME for each gene set
+kME_mito <- compute_kME(MEs_mito$datExpr, MEs_mito)
+kME_synaptic <- compute_kME(MEs_synaptic$datExpr, MEs_synaptic)
+kME_ribosomal <- compute_kME(MEs_ribosomal$datExpr, MEs_ribosomal)
+
+# Save kME tables to Excel (Fixed file name)
+write_xlsx(list(
+  Mitochondrial = as.data.frame(kME_mito),
+  Synaptic = as.data.frame(kME_synaptic),
+  Ribosomal = as.data.frame(kME_ribosomal)
+), "kME_tables.ShK.vs.PBS.xlsx")
+
+print("kME calculations and Excel file saved successfully!")
+
+# Display first 5 rows of eigengenes (Fixed)
+head(MEs_mito$MEs, 5)
+head(MEs_synaptic$MEs, 5)
+head(MEs_ribosomal$MEs, 5)
+#Boxplots with Significance Bars
+# Prepare data for boxplots
+MEs_combined <- data.frame(
+  Eigengene = c(MEs_mito$MEs$MEModule1, MEs_synaptic$MEs$MEModule1, MEs_ribosomal$MEs$MEModule1),
+  Module = rep(c("Mitochondrial", "Synaptic", "Ribosomal"), each = nrow(metadata.ShK.PBS)),
+  Treatment = rep(metadata.ShK.PBS$Treatment, 3)
+)
+
+# Save
+write.csv(MEs_combined, file = 'MEs_combined.ShK.vs.PBS.csv')
+
+# Generate boxplots with significance bars
+ggboxplot(MEs_combined, x = "Treatment", y = "Eigengene", fill = "Treatment",
+          palette = c("ShK" = "purple", "PBS" = "darkgreen")) +
+  stat_compare_means(method = "t.test", label = "p.format", 
+                     comparisons = list(c("ShK", "PBS"))) +
+  theme_minimal() +
+  labs(title = "Pro.resilience in ShK.vs.PBS",
+       x = "Treatment",
+       y = "Eigengene") +
+  facet_wrap(~ Module, scales = "free_y")  # Separate plots for each module
+
+```
+

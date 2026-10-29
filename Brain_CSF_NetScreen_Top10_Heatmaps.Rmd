@@ -1,0 +1,188 @@
+---
+title: "Brain–CSF NetScreen: Top 10 Human CSF Protein Heatmaps"
+author: "Proteomics Analysis"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+---
+
+# Overview
+
+This workflow visualizes existing NetScreen biweight midcorrelation (`bicor`) results for four brain eigenprotein signatures: PAP1-UP, PAP1-DOWN, ShK-223-UP, and ShK-223-DOWN. Heatmap cells show `bicor`, and fill color represents `-log10(nominal p_value)`. No correlations or statistical tests are recalculated here.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Step 1 — Load required libraries
+
+```{r libraries}
+library(dplyr)
+library(ggplot2)
+library(readr)
+```
+
+# Step 2 — Configure input and output locations
+
+```{r configuration}
+# Set this directory to the location containing your four CSV files.
+input_dir <- "All_Four_Top10_Human_CSF_OneRow"
+output_dir <- "Brain_CSF_NetScreen_Top10_Heatmaps"
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Input filenames can be edited here without changing the plotting code.
+input_files <- c(
+  PAP1_UP   = file.path(input_dir, "PAP1_UP", "PAP1_UP_Top10_Human_CSF_Results.csv"),
+  PAP1_DOWN = file.path(input_dir, "PAP1_DOWN", "PAP1_DOWN_Top10_Human_CSF_Results.csv"),
+  ShK_UP    = file.path(input_dir, "ShK_UP", "ShK_UP_Top10_Human_CSF_Results.csv"),
+  ShK_DOWN  = file.path(input_dir, "ShK_DOWN", "ShK_DOWN_Top10_Human_CSF_Results.csv")
+)
+
+plot_titles <- c(
+  PAP1_UP = "PAP1-UP",
+  PAP1_DOWN = "PAP1-Down",
+  ShK_UP = "ShK-223-UP",
+  ShK_DOWN = "ShK-223-Down"
+)
+```
+
+# Step 3 — Import and validate the four NetScreen tables
+
+```{r import-data}
+# Expected columns: Brain_Eigenprotein, CSF_Protein, bicor, p_value, FDR, Direction.
+# Only the first four columns are required for this visualization.
+required_columns <- c("Brain_Eigenprotein", "CSF_Protein", "bicor", "p_value")
+
+read_netscreen <- function(path) {
+  if (!file.exists(path)) {
+    stop("Missing input file: ", path,
+         "\nUpdate input_dir/input_files or place the CSV at this location.")
+  }
+  dat <- read_csv(path, show_col_types = FALSE)
+  missing_columns <- setdiff(required_columns, names(dat))
+  if (length(missing_columns) > 0) {
+    stop("Missing columns in ", path, ": ", paste(missing_columns, collapse = ", "))
+  }
+  if (anyNA(dat[, required_columns])) {
+    stop("Missing values in required columns: ", path)
+  }
+  if (!is.numeric(dat$bicor) || !is.numeric(dat$p_value)) {
+    stop("bicor and p_value must be numeric: ", path)
+  }
+  if (any(!is.finite(dat$bicor)) || any(abs(dat$bicor) > 1)) {
+    stop("Invalid bicor values in: ", path)
+  }
+  if (any(!is.finite(dat$p_value)) || any(dat$p_value <= 0 | dat$p_value > 1)) {
+    stop("p_value must be > 0 and <= 1: ", path)
+  }
+  if (anyDuplicated(dat[, c("Brain_Eigenprotein", "CSF_Protein")])) {
+    stop("Duplicate brain-signature / CSF-protein pairs in: ", path)
+  }
+  dat
+}
+
+netscreen_results <- lapply(input_files, read_netscreen)
+
+# Confirm number of proteins in each input table.
+data.frame(Group = names(netscreen_results),
+           N_Proteins = vapply(netscreen_results, nrow, integer(1)))
+```
+
+# Step 4 — Prepare plotting data
+
+```{r prepare-data}
+prepare_heatmap_data <- function(dat) {
+  # Order CSF proteins by descending bicor (highest correlation at the top).
+  # Reversed factor levels are needed because ggplot displays the last level at the top.
+  dat <- dat %>%
+    arrange(desc(bicor), CSF_Protein) %>%
+    mutate(
+      neglog10_p = -log10(p_value),
+      Correlation = sprintf("%.3f", bicor),
+      CSF_Protein = factor(CSF_Protein, levels = rev(unique(CSF_Protein)))
+    )
+  dat
+}
+
+heatmap_tables <- lapply(netscreen_results, prepare_heatmap_data)
+```
+
+# Step 5 — Define a reusable heatmap function
+
+```{r plot-function}
+make_netscreen_heatmap <- function(dat, plot_title) {
+  ggplot(dat, aes(x = Brain_Eigenprotein, y = CSF_Protein, fill = neglog10_p)) +
+    geom_tile(color = "white", linewidth = 0.8, width = 0.95, height = 0.95) +
+    geom_text(aes(label = Correlation), size = 4.5,
+              color = "black", fontface = "bold") +
+    scale_fill_gradient(
+      low = "#FEE5D9", high = "#A50F15",
+      name = expression(-log[10](italic(p)))
+    ) +
+    labs(title = plot_title, x = NULL, y = NULL) +
+    coord_fixed(ratio = 0.55) +
+    theme_minimal(base_size = 13) +
+    theme(
+      panel.grid = element_blank(),
+      axis.text.x = element_text(size = 12, face = "bold"),
+      axis.text.y = element_text(size = 12, face = "italic"),
+      plot.title = element_text(size = 15, face = "bold", hjust = 0.5),
+      legend.title = element_text(size = 11),
+      legend.text = element_text(size = 10)
+    )
+}
+```
+
+# Step 6 — Generate and display all four heatmaps
+
+```{r generate-heatmaps, fig.width=5, fig.height=6}
+heatmaps <- Map(
+  f = function(dat, group) make_netscreen_heatmap(dat, plot_titles[[group]]),
+  dat = heatmap_tables,
+  group = names(heatmap_tables)
+)
+names(heatmaps) <- names(heatmap_tables)
+
+for (group in names(heatmaps)) {
+  print(heatmaps[[group]])
+}
+```
+
+# Step 7 — Export publication-ready PDF and PNG files
+
+```{r save-heatmaps}
+for (group in names(heatmaps)) {
+  file_stem <- paste0(group, "_Top10_Human_CSF_Heatmap")
+  ggsave(
+    filename = file.path(output_dir, paste0(file_stem, ".pdf")),
+    plot = heatmaps[[group]], width = 5, height = 6, units = "in"
+  )
+  ggsave(
+    filename = file.path(output_dir, paste0(file_stem, ".png")),
+    plot = heatmaps[[group]], width = 5, height = 6,
+    units = "in", dpi = 300
+  )
+}
+```
+
+# Step 8 — Export processed plotting tables
+
+```{r export-tables}
+for (group in names(heatmap_tables)) {
+  write_csv(
+    heatmap_tables[[group]],
+    file.path(output_dir, paste0(group, "_Heatmap_Plotting_Data.csv"))
+  )
+}
+```
+
+# Notes on interpretation
+
+- **Cell labels:** biweight midcorrelation (`bicor`) between the brain eigenprotein signature and CSF protein abundance.
+- **Tile color:** `-log10(p_value)` based on the nominal P value, **not** FDR.
+- **Protein order:** descending bicor within each signature.
+- **Statistical caution:** these plots are visualizations of precomputed correlations; use the complete NetScreen results, rather than only top-ten subsets, for multiple-testing interpretation.
+- **Color comparability:** the gradient is scaled independently for each panel, matching the original code. To compare color intensity directly across panels, set a common `limits` range in `scale_fill_gradient()`.

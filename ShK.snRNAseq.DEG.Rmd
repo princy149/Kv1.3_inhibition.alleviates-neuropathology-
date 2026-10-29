@@ -1,0 +1,548 @@
+---
+title: "ShK.snRNAseq.DEG"
+author: "Dr UPASNA"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r load Data}
+library(dplyr)
+library(RColorBrewer)
+library(tidyverse)
+library(ggplot2)
+library(EnhancedVolcano)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+#setwd('/Users/usri/Desktop/PAP1.Celltype.DEG/NEW.Cut.off/')
+
+## Microglia_Shk_vs_PBS
+library(readr)
+resDF_Microglia_Shk_vs_PBS <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.Microglia/resDF.Microglia.Shk.vs.PBS.csv")
+table(resDF_Microglia_Shk_vs_PBS$diffexpressed)
+resDF <- resDF_Microglia_Shk_vs_PBS
+
+
+
+# Microglia_Shk_vs_PBS  Volcano
+resDF <- resDF_Microglia_Shk_vs_PBS
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+write.csv(resDF, file = 'Microglia_Shk_vs_PBS.csv') 
+
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(10)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(10)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "Microglia_Shk_vs_PBS",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("Microglia_Shk_vs_PBS.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+
+## Astrocytes_ShKvs_PBS
+resDF_Astrocytes_ShKvs_PBS <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.Astrocytes/resDF.Astrocytes.ShKvs.PBS.csv")
+table(resDF_Astrocytes_ShKvs_PBS$diffexpressed)
+resDF <- resDF_Astrocytes_ShKvs_PBS
+
+# Astrocytes_ShKvs_PBS  Volcano
+resDF <- resDF_Astrocytes_ShKvs_PBS
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+write.csv(resDF, file = 'Astrocytes_ShKvs_PBS.csv')  
+
+
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(10)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(10)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "Astrocytes_Shk_vs_PBS",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("Astrocytes_Shk_vs_PBS.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+
+## Oligodendrocyte_ShK_vs_PBS
+library(readr)
+resDF_Oligodendrocyte_ShK_vs_PBS <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.Oligodendrocytes/resDF.Oligodendrocyte.ShK.vs.PBS.csv")
+table(resDF_Oligodendrocyte_ShK_vs_PBS$diffexpressed)
+resDF <- resDF_Oligodendrocyte_ShK_vs_PBS
+
+# Astrocytes_ShKvs_PBS  Volcano
+resDF <- resDF_Oligodendrocyte_ShK_vs_PBS
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+
+write.csv(resDF, file = 'Oligodendrocyte_ShK_vs_PBS.csv')  
+
+
+
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(10)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(10)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "Oligodendrocyte_ShK_vs_PBS",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("Oligodendrocyte_ShK_vs_PBS.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+
+## Endothelial_Cell_ShK_vs_PBS
+library(readr)
+resDF_Endothelial_Cell_ShK_vs_PBS <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.Endothelial/resDF.Endothelial.Cell.ShK.vs.PBS.csv")
+table(resDF_Endothelial_Cell_ShK_vs_PBS$diffexpressed)
+resDF <- resDF_Endothelial_Cell_ShK_vs_PBS
+
+# Endothelial_Cell_ShK_vs_PBS  Volcano
+resDF <- resDF_Endothelial_Cell_ShK_vs_PBS
+
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+write.csv(resDF, file = 'Endothelial_Cell_ShK_vs_PBS.csv')  
+
+
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(5)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(5)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "Endothelial_Cell_ShK_vs_PBS",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("Endothelial_Cell_ShK_vs_PBS.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+
+## GABAergic_Neuron_ShK_vs_PBS
+resDF_GABAergic_Neuron_ShK_vs_PBS <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.Endothelial/resDF.GABAergic.Neuron.ShK.vs.PBS.csv")
+table(resDF_GABAergic_Neuron_ShK_vs_PBS$diffexpressed)
+resDF <- resDF_GABAergic_Neuron_ShK_vs_PBS
+
+# Astrocytes_ShKvs_PBS  Volcano
+resDF <- resDF_GABAergic_Neuron_ShK_vs_PBS
+
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+
+write.csv(resDF, file = 'GABAergic_Neuron_ShK_vs_PBS.csv')  
+
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(10)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(10)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "GABAergic_Neuron_ShK_vs_PBS",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("GABAergic_Neuron_ShK_vs_PBS.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+
+
+## Glutamatergic_Neuron_ShK_vs_PBS
+library(readr)
+resDF_Glutamatergic_Neuron_ShK_vs_PBS <- read_csv("~/Desktop/Mureen.dec6/Bulk.Glmgampoi.Endothelial/resDF.Glutamatergic.Neuron.ShK.vs.PBS.csv")
+table(resDF_Glutamatergic_Neuron_ShK_vs_PBS$diffexpressed)
+resDF <- resDF_Glutamatergic_Neuron_ShK_vs_PBS
+
+
+# Glutamatergic_Neuron_ShK_vs_PBS  Volcano
+resDF <- resDF_Glutamatergic_Neuron_ShK_vs_PBS
+
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+write.csv(resDF, file = 'Glutamatergic_Neuron_ShK_vs_PBS.csv')  
+
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(10)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(10)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "Glutamatergic_Neuron_ShK_vs_PBS",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("Glutamatergic_Neuron_ShK_vs_PBS.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+```
+
+
+
+```{r Oligodendrocyte Precursor Cells}
+library(readr)
+
+resDF_Oligodendrocyte_PrecursorCell_ShK_vs_PBS <- read_csv("resDF.Oligodendrocyte.PrecursorCell.ShK.vs.PBS.csv")
+
+## Oligodendrocyte_PrecursorCell_ShK_vs_PBS
+
+resDF <- resDF_Oligodendrocyte_PrecursorCell_ShK_vs_PBS
+
+resDF$Expression.Padjust <- "NO"
+resDF$Expression.Padjust[resDF$lfc > 0.25 & resDF$adj_pval < 0.05] <- "UP"
+resDF$Expression.Padjust[resDF$lfc < -0.25 & resDF$adj_pval < 0.05] <- "DOWN"
+
+Oligodendrocyte_PrecursorCell_ShK_vs_PBS  <- resDF
+
+table(Oligodendrocyte_PrecursorCell_ShK_vs_PBS$Expression.Padjust)
+
+write.csv(Oligodendrocyte_PrecursorCell_ShK_vs_PBS, file = 'Oligodendrocyte_PrecursorCell_ShK_vs_PBS.csv')
+
+
+## Oligodendrocyte_PrecursorCell_ShK_vs_PBS Volcano
+
+resDF <- Oligodendrocyte_PrecursorCell_ShK_vs_PBS
+
+resDF$name <- resDF$name
+# Count groups
+up_count <- sum(resDF$Expression.Padjust == "UP", na.rm = TRUE)
+down_count <- sum(resDF$Expression.Padjust == "DOWN", na.rm = TRUE)
+no_count <- sum(resDF$Expression.Padjust == "NO", na.rm = TRUE)
+
+# Create legend label
+legend_title <- paste0("Expression\nUP: ", up_count,
+                       " | DOWN: ", down_count,
+                       " | NS: ", no_count)
+
+# Top 15 UP and DOWN
+top_up <- resDF %>% filter(Expression.Padjust == "UP") %>% arrange(adj_pval) %>% head(12)
+top_down <- resDF %>% filter(Expression.Padjust == "DOWN") %>% arrange(adj_pval) %>% head(12)
+top_genes <- bind_rows(top_up, top_down)
+
+# Create volcano plot with only inner panel border
+volcano_plot <- ggplot(resDF, aes(x = lfc, y = -log10(adj_pval), color = Expression.Padjust)) +
+    geom_point(alpha = 0.8, size = 2) +
+    geom_vline(xintercept = c(-0.25, 0.25), linetype = "dashed", color = "black") +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    geom_text_repel(data = top_genes,
+                    aes(label = name),
+                    size = 6, max.overlaps = 200,
+                    box.padding = 0.6, point.padding = 0.3,
+                    segment.color = 'grey40') +
+    scale_color_manual(values = c("UP" = "red", "DOWN" = "blue", "NO" = "gray")) +
+    labs(title = "Oligodendrocyte_PrecursorCell_ShK_vs_PBS",
+         x = "Log2 Fold Change",
+         y = "-log10(AdjP-value)",
+         color = legend_title) +
+    theme_minimal(base_size = 14) +
+    theme(
+        legend.position = "top",
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+        plot.background = element_blank()  # No outer border
+    )
+volcano_plot <- volcano_plot + xlim(-1.5, 1.5)
+# Save square PDF
+ggsave("Oligodendrocyte_PrecursorCell_ShK_vs_PBS.Volcano.pdf",
+       plot = volcano_plot,
+       width = 7, height = 7)
+
+#dev.off()
+
+```
+
+
+```{r Percentage of DEG Bar plot}
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+library(readr)
+ShK_DEG_Table <- read_csv("~/Desktop/PAP1.Celltype.DEG/ShK.DEG.Table.csv")
+
+df <- ShK_DEG_Table
+
+# Calculate Percent
+df$Percent <- round((df$Total_Significant / df$Total_Genes) * 100, 1)
+
+# Set custom colors matching the plot
+custom_colors <- c("Astrocytes" = "firebrick",
+                   "Glutamatergic Neuron" = "salmon",
+                   "Microglia" = "darkgreen",
+                   "Oligodendrocyte" = "cyan",
+                   "GABAergic Neuron" = "blue",
+                   "Oligodendrocyte Precursor" = "orange",
+                   "Endothelial" = "purple")
+
+# Create the bar plot
+ggplot(df, aes(x = reorder(Celltype, -Percent), y = Percent, fill = Celltype)) +
+    geom_bar(stat = "identity", width = 0.8) +
+    geom_text(aes(label = paste0(Percent, "%")), 
+              vjust = -0.5, size = 5, color = "black") +
+    scale_fill_manual(values = custom_colors) +
+    theme_minimal(base_size = 14) +
+    theme(legend.position = "right",
+          axis.text.x = element_text(face = "bold", angle = 20, hjust = 1),
+          plot.title = element_text(face = "bold", size = 16, hjust = 0.5)) +
+    labs(title = "ShK vs. PBS",
+         y = "Percentage", x = NULL, fill = "Celltype") +
+    # Add UP and DOWN gene labels below bars
+    geom_text(aes(y = -2, label = paste0("UP: ", UP)), color = "blue", vjust = 1, size = 4.2) +
+    geom_text(aes(y = -6, label = paste0("DOWN: ", DOWN)), color = "darkblue", vjust = 1, size = 4.2) +
+    expand_limits(y = -8)  # Leave space at the bottom for UP/DOWN text
+
+
+### PART2
+library(readr)
+ShK_DEG_Table <- read_csv("~/Desktop/PAP1.Celltype.DEG/ShK.DEG.Table.csv")
+
+df <- ShK_DEG_Table
+
+
+# Add percentage of total significant genes
+df <- df %>%
+    mutate(Percent_Total_Significant = round((Total_Significant / Total_Genes) * 100, 2))
+
+# Reshape to long format
+df_long <- df %>%
+    pivot_longer(cols = c(UP, DOWN), names_to = "Direction", values_to = "Count") %>%
+    mutate(
+        Percent = round((Count / Total_Genes) * 100, 2),
+        Celltype = factor(Celltype, levels = df$Celltype[order(-df$Percent_Total_Significant)])
+    )
+
+# Get top labels for total significant % above the bars
+df_top_labels <- df %>%
+    select(Celltype, Percent_Total_Significant) %>%
+    mutate(Celltype = factor(Celltype, levels = df$Celltype[order(-Percent_Total_Significant)]))
+
+# Direction colors
+direction_colors <- c("UP" = "red", "DOWN" = "steelblue")
+
+# Plot
+ggplot(df_long, aes(x = Celltype, y = Percent, fill = Direction)) +
+    geom_bar(stat = "identity", width = 0.8, color = "black") +
+    geom_text(aes(label = paste0(Percent, "%")),
+              position = position_stack(vjust = 0.5), size = 4, color = "white") +
+    geom_text(data = df_top_labels,
+              aes(x = Celltype, y = Percent_Total_Significant + 2,
+                  label = paste0("Total: ", Percent_Total_Significant, "%")),
+              inherit.aes = FALSE,
+              size = 4.5, fontface = "bold") +
+    scale_fill_manual(values = direction_colors) +
+    theme_minimal(base_size = 14) +
+    theme(
+        axis.text.x = element_text(face = "bold", angle = 20, hjust = 1),
+        legend.title = element_blank()
+    ) +
+    labs(title = "ShK vs. PBS",
+         x = NULL, y = "Percentage of Total Genes")
+
+```
+

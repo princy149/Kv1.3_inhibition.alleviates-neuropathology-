@@ -1,0 +1,101 @@
+object.list.PBS.Shk <- readRDS("~/Desktop/ShK.PBS.15march/object.list.PBS.Shk.rds")
+PBS <- object.list.PBS.Shk$PBS
+SHK <- object.list.PBS.Shk$Shk
+PBS
+SHK
+cellchat.1 <- SHK
+cellchat.2 <- PBS
+# use a subset of CellChatDB for cell-cell communication analysis
+CellChatDB <- CellChatDB.mouse
+# use a subset of CellChatDB for cell-cell communication analysis
+CellChatDB.Secreted.Signaling  <- subsetDB(CellChatDB, search = "Secreted Signaling")
+# set the used database in the object
+cellchat.1@DB <- CellChatDB.Secreted.Signaling
+cellchat.2@DB <- CellChatDB.Secreted.Signaling
+cellchat.1 <- subsetData(cellchat.1) # subset the expression data of signaling genes
+cellchat.2 <- subsetData(cellchat.2) # subset the expression data of signaling genes
+#Compute the communication probability and infer cellular communication network
+cellchat.1 <- identifyOverExpressedGenes(cellchat.1)
+cellchat.1 <- identifyOverExpressedInteractions(cellchat.1)
+cellchat.1 <- projectData(cellchat.1, PPI.mouse )
+cellchat.1 <- computeCommunProb(cellchat.1, raw.use = TRUE)
+# Filter out the cell-cell communication if there are only few number of cells in certain cell groups
+cellchat.1 <- filterCommunication(cellchat.1, min.cells = 10)
+cellchat.1 <- computeCommunProbPathway(cellchat.1)
+cellchat.1 <- aggregateNet(cellchat.1)
+#Compute the communication probability and infer cellular communication network
+cellchat.2 <- identifyOverExpressedGenes(cellchat.2)
+cellchat.2 <- identifyOverExpressedInteractions(cellchat.2)
+cellchat.2 <- projectData(cellchat.2, PPI.mouse )
+cellchat.2 <- computeCommunProb(cellchat.2, raw.use = TRUE)
+# Filter out the cell-cell communication if there are only few number of cells in certain cell groups
+cellchat.2  <- filterCommunication(cellchat.2, min.cells = 10)
+cellchat.2  <- computeCommunProbPathway(cellchat.2)
+cellchat.2  <- aggregateNet(cellchat.2)
+object.list.PBS.Shk <- list(PBS = cellchat.2, ShK = cellchat.1)
+object.list.PBS.Shk
+object.list.PBS.Shk$PBS
+object.list.PBS.Shk
+cellchat.1
+cellchat.ShK.PBS.for.Dysregulation.april2 <- readRDS("~/Desktop/Mureen.dec6/Cellchat.April1/ShK.APRIL/cellchat.ShK.PBS.for.Dysregulation.april2.rds")
+cellchat.ShK.PBS.for.Dysregulation.april2
+object.list.PBS.Shk <- readRDS("~/Desktop/ShK.PBS.15march/object.list.PBS.Shk.rds")
+object.list.PBS.Shk
+PBS <- object.list.PBS.Shk$PBS
+SHK <- object.list.PBS.Shk$Shk
+PBS
+load("~/Desktop/Mureen.dec6/Cellchat.April1/ShK.APRIL/cellchat_object.list_ShK.PBS.April.RData")
+cellchat.1
+library(CellChat)
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ComplexHeatmap)
+library(RColorBrewer)
+library(ggplot2)
+library(compiler)
+library(presto)
+object.list.PBS.Shk <- readRDS("~/Desktop/ShK.PBS.15march/object.list.PBS.Shk.rds")
+SHK <- object.list.PBS.Shk$Shk
+PBS <- object.list.PBS.Shk$PBS
+cellchat.1 <- SHK
+cellchat.2 <- PBS
+#CellChatDB.Secreted.Signaling
+# use a subset of CellChatDB for cell-cell communication analysis
+CellChatDB <- CellChatDB.mouse
+# use a subset of CellChatDB for cell-cell communication analysis
+CellChatDB.Secreted.Signaling  <- subsetDB(CellChatDB, search = "Secreted Signaling")
+# set the used database in the object
+cellchat.1@DB <- CellChatDB.Secreted.Signaling
+cellchat.2@DB <- CellChatDB.Secreted.Signaling
+cellchat.1 <- subsetData(cellchat.1) # subset the expression data of signaling genes
+cellchat.2 <- subsetData(cellchat.2) # subset the expression data of signaling genes
+#Compute the communication probability and infer cellular communication network
+cellchat.1 <- identifyOverExpressedGenes(cellchat.1)
+cellchat.1 <- identifyOverExpressedInteractions(cellchat.1)
+cellchat.1 <- projectData(cellchat.1, PPI.mouse )
+cellchat.1 <- computeCommunProb(cellchat.1, raw.use = TRUE)
+cellchat.1
+# Filter out the cell-cell communication if there are only few number of cells in certain cell groups
+cellchat.1 <- filterCommunication(cellchat.1, min.cells = 10)
+cellchat.1 <- computeCommunProbPathway(cellchat.1)
+cellchat.1 <- aggregateNet(cellchat.1)
+#Compute the communication probability and infer cellular communication network
+cellchat.2 <- identifyOverExpressedGenes(cellchat.2)
+cellchat.2 <- identifyOverExpressedInteractions(cellchat.2)
+cellchat.2 <- projectData(cellchat.2, PPI.mouse )
+cellchat.2 <- computeCommunProb(cellchat.2, raw.use = TRUE)
+# Filter out the cell-cell communication if there are only few number of cells in certain cell groups
+cellchat.2  <- filterCommunication(cellchat.2, min.cells = 10)
+cellchat.2  <- computeCommunProbPathway(cellchat.2)
+cellchat.2  <- aggregateNet(cellchat.2)
+cellchat.1
+cellchat.2
+object.list <- list(PBS = cellchat.2, ShK = cellchat.1)
+object.list
+saveRDS(object.list, file = 'object.list.PBS.Shk.28april.rds')
+cellchat <- mergeCellChat(object.list, add.names = names(object.list))
+cellchat
+table(cellchat@meta$condition)
+savehistory('PBS.ShK.CELLCHAT.ANALYSIS.28APRIL.R')
+savehistory('PBS.ShK.CELLCHAT.ANALYSIS.28APRIL.r')
