@@ -1,0 +1,199 @@
+---
+title: "KV1.3.Brain.Bulk.Proteomics.05.2025"
+author: "Dr UPASNA"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#wd= "/Users/usri/Desktop/Ali.CSF.VPA.04.2025"
+##load library
+library(tidyverse)
+#library (readxl)
+library(writexl)
+library(ggrepel)
+library(gplots)
+library(randomForest)
+library(pROC)
+library(variancePartition)
+library(limma)
+library(BiocParallel)
+library(ComplexHeatmap)
+library(org.Hs.eg.db)
+library(clusterProfiler)
+library(pheatmap)
+library(EnhancedVolcano)
+library(tidyverse)
+library(dplyr)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(dplyr)
+library(preprocessCore)
+library(M3C)
+KV1.3.BULK.BRAIN.PRoteomics.normalized <- readRDS("~/Desktop/Ali.CSF.VPA.04.2025/KV1.3.BULK.BRAIN.PRoteomics.normalized.rds")
+KV1_3_Bulk_Brain_Priteomics_Metadata <- readRDS("~/Desktop/Ali.CSF.VPA.04.2025/KV1_3_Bulk_Brain_Priteomics_Metadata.rds")
+dim(KV1.3.BULK.BRAIN.PRoteomics.normalized)
+KV1_3_Bulk_Brain_Priteomics_Metadata
+colnames(KV1.3.BULK.BRAIN.PRoteomics.normalized)==rownames(KV1_3_Bulk_Brain_Priteomics_Metadata)
+```
+
+
+```{r PCA plot}
+# Load required libraries
+library(ggplot2)
+library(tidyverse)
+
+# Transpose the matrix so samples are rows
+pca_input <- t(KV1.3.BULK.BRAIN.PRoteomics.normalized)
+
+# Run PCA
+pca_res <- prcomp(pca_input, center = TRUE, scale. = TRUE)
+
+# Create data frame for plotting
+pca_df <- as.data.frame(pca_res$x)  # PCA scores
+pca_df$Sample <- rownames(pca_df)
+pca_df$Group <- KV1_3_Bulk_Brain_Priteomics_Metadata[rownames(pca_df), "Group"]
+
+# Plot the first two principal components
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Group, label = Sample)) +
+  geom_point(size = 4, alpha = 0.8) +
+  geom_text(vjust = -1, size = 3) +
+  theme_minimal() +
+  labs(
+    title = "PCA of Bulk Brain Proteomics Data",
+    x = paste0("PC1 (", round(100 * summary(pca_res)$importance[2, 1], 1), "% variance)"),
+    y = paste0("PC2 (", round(100 * summary(pca_res)$importance[2, 2], 1), "% variance)")
+  ) +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+
+```{r Second PCA plot}
+# Load libraries
+library(ggplot2)
+library(tidyverse)
+library(factoextra)    # For scree plot (variance explained)
+
+# Step 1: Prepare PCA input
+pca_input <- t(KV1.3.BULK.BRAIN.PRoteomics.normalized)
+
+# Step 2: Run PCA
+pca_res <- prcomp(pca_input, center = TRUE, scale. = TRUE)
+
+# Step 3: Create data frame for plotting
+pca_df <- as.data.frame(pca_res$x)  # PCA scores
+pca_df$Sample <- rownames(pca_df)
+
+# Add clean sample names
+pca_df$SampleID <- tools::file_path_sans_ext(basename(pca_df$Sample))
+
+# Add Group info
+pca_df$Group <- KV1_3_Bulk_Brain_Priteomics_Metadata[rownames(pca_df), "Group"]
+
+# Calculate % variance explained
+pc_var <- summary(pca_res)$importance[2, ]
+pc1_var <- round(pc_var[1] * 100, 1)
+pc2_var <- round(pc_var[2] * 100, 1)
+
+# Step 4: PCA Plot
+ggplot(pca_df, aes(x = PC1, y = PC2, color = Group)) +
+  geom_point(size = 4, alpha = 0.85) +
+  geom_text(aes(label = SampleID), vjust = -1, size = 3) +
+  stat_ellipse(aes(group = Group), type = "norm", linetype = 2, alpha = 0.2) +
+  theme_minimal() +
+  labs(
+    title = "PCA of Bulk Brain Proteomics Data",
+    x = paste0("PC1 (", pc1_var, "% variance)"),
+    y = paste0("PC2 (", pc2_var, "% variance)")
+  ) +
+  theme(
+    legend.title = element_blank(),
+    plot.title = element_text(hjust = 0.5),
+    axis.text = element_text(size = 10)
+  )
+
+```
+
+
+```{r Scree Plot (Optional but Recommended for QC)}
+# Scree plot to visualize variance explained by each PC
+fviz_eig(pca_res, addlabels = TRUE, barfill = "steelblue", barcolor = "black") +
+  theme_minimal() +
+  labs(title = "Variance Explained by Principal Components")
+
+```
+
+
+```{r SUBSET DATA FOR DEP ANALYSIS DEPS}
+#Subset metadata
+# Your metadata (already has sample names as rownames)
+metadata <- KV1_3_Bulk_Brain_Priteomics_Metadata
+
+# Subset PAP1 vs CONTROL
+meta_pap1_control <- metadata %>%
+  filter(Group %in% c("Pap1", "Control"))
+
+# Subset SHK vs PBS
+meta_shk_pbs <- metadata %>%
+  filter(Group %in% c("SHK", "PBS"))
+
+##Subset expression matrix
+# Your normalized matrix
+expr <- KV1.3.BULK.BRAIN.PRoteomics.normalized
+# Subset based on metadata sample names
+expr_pap1_control <- expr[, rownames(meta_pap1_control)]
+expr_shk_pbs <- expr[, rownames(meta_shk_pbs)]
+#Save to CSV
+# Save metadata
+write.csv(meta_pap1_control, "metadata_PAP1_vs_CONTROL.csv", row.names = TRUE)
+write.csv(meta_shk_pbs, "metadata_SHK_vs_PBS.csv", row.names = TRUE)
+
+# Save expression matrices
+write.csv(expr_pap1_control, "expr_PAP1_vs_CONTROL.csv", row.names = TRUE)
+write.csv(expr_shk_pbs, "expr_SHK_vs_PBS.csv", row.names = TRUE)
+```
+
+
+```{r DEP ANALYSIS PAP1 VS. CONTROL}
+cleanDat <- expr_pap1_control
+numericMeta <- meta_pap1_control
+numericMeta$Group <- meta_pap1_control$Group
+Grouping.NCTerm <- numericMeta
+Grouping <- numericMeta$Group
+table(rownames(Grouping.NCTerm) == colnames(cleanDat))
+condition <- numericMeta$Group
+Grouping <- numericMeta$Group
+source("/Users/usri/Desktop/Screen/parANOVA.dex.R")
+ANOVAout <- parANOVA.dex()
+labelTop <- 15
+FCmin= 0
+flip = -3
+signifP=0.05
+plotVolc()
+```
+
+
+
+```{r DEP ANALYSIS ShK VS. PBS}
+cleanDat <- expr_shk_pbs
+numericMeta <- meta_shk_pbs 
+numericMeta$Group <- meta_shk_pbs$Group
+Grouping.NCTerm <- numericMeta
+Grouping <- numericMeta$Group
+table(rownames(Grouping.NCTerm) == colnames(cleanDat))
+condition <- numericMeta$Group
+Grouping <- numericMeta$Group
+source("/Users/usri/Desktop/Screen/parANOVA.dex.R")
+ANOVAout <- parANOVA.dex()
+labelTop <- 15
+FCmin= 0
+flip = -3
+signifP=0.05
+plotVolc()
+```
+
